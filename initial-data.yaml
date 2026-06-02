@@ -1,0 +1,15 @@
+accounts:
+  - name: Compte courant
+    show_in_summary: true
+  - name: Compte epargne
+    show_in_summary: true
+
+labels:
+  - Salaire
+  - Courses
+  - Loyer
+  - Electricite
+  - Internet
+  - Transport
+  - Restaurant
+  - Virement interne
