@@ -41,6 +41,38 @@ def row_options(rows: list[sqlite3.Row], selected: object | None, empty_label: s
     return "".join(chunks)
 
 
+def label_picker(label: str, attrs: str) -> str:
+    return f"""<div class="label-picker" data-label-picker>
+  <div class="label-picker-row">
+    <input value="{esc(label)}" data-original="{esc(label)}" autocomplete="off" placeholder="Intitulé" {attrs} data-label-input>
+    <button class="label-add" type="button" data-create-label hidden>+</button>
+  </div>
+  <div class="label-suggestions" data-label-suggestions hidden></div>
+</div>"""
+
+
+def row_action_buttons(kind: str, mode: str = "idle") -> str:
+    editing = mode == "edit"
+    deleting = mode == "delete"
+    edit_hidden = "" if editing else " hidden"
+    delete_hidden = "" if deleting else " hidden"
+    return f"""<button type="button" class="row-confirm" data-confirm-{kind}{edit_hidden}>V</button>
+    <button type="button" class="row-cancel" data-cancel-{kind}{edit_hidden}>X</button>
+    <button type="button" class="row-delete" data-delete-{kind}{delete_hidden}>-</button>"""
+
+
+def icon(name: str) -> str:
+    icons = {
+        "plus": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+        "clear-list": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M4 12h7M4 17h5M15 10l5 5M20 10l-5 5"/></svg>',
+        "upload": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>',
+        "hourglass": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M5 20h14M7 4c0 5 5 6 5 8s-5 3-5 8M17 4c0 5-5 6-5 8s5 3 5 8"/></svg>',
+        "x": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+        "check": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg>',
+    }
+    return icons[name]
+
+
 def layout(title: str, body: str) -> bytes:
     return f"""<!doctype html>
 <html lang="fr">

@@ -19,9 +19,6 @@ async function saveCell(element) {
     const row = element.closest("[data-transaction-id]");
     payload.id = row.dataset.transactionId;
     payload.field = element.dataset.field;
-  } else if (kind === "label-comment") {
-    payload.month_id = element.dataset.monthId;
-    payload.label_id = element.dataset.labelId;
   } else if (kind === "account-balance") {
     payload.month_id = element.dataset.monthId;
     payload.account_id = element.dataset.accountId;
@@ -267,14 +264,7 @@ function markRowDirty(row) {
 }
 
 function setRowActions(row, mode) {
-  const editing = mode === true || mode === "edit";
-  const deleting = mode === "delete";
-  row.querySelectorAll("[data-confirm-row], [data-cancel-row]").forEach((button) => {
-    button.hidden = !editing;
-  });
-  row.querySelectorAll("[data-delete-row]").forEach((button) => {
-    button.hidden = !deleting;
-  });
+  setActionButtons(row, "row", mode);
 }
 
 function focusRowDeleteAction(row) {
@@ -292,7 +282,7 @@ function createEmptyRow(table) {
   row.innerHTML = `
     <td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-drag-handle title="Déplacer">↕</button><span class="row-index-value" data-field="sort_index" data-original=""></span></td>
     <td class="editable" contenteditable="true" data-save="transaction" data-field="date" data-original=""></td>
-    <td>${labelPickerHtml("")}</td>
+    <td>${labelPickerHtml("", 'data-save="transaction" data-field="label"')}</td>
     <td class="editable num" contenteditable="true" data-save="transaction" data-field="amount" data-original=""></td>
     <td class="editable" contenteditable="true" data-save="transaction" data-field="comment" data-original=""></td>
     <td class="row-actions">
@@ -327,6 +317,11 @@ async function saveSettingRow(row) {
     summaryCheckbox.dataset.id = result.id;
     summaryCheckbox.disabled = false;
   }
+  const visibleIfEmptyCheckbox = row.querySelector("[data-account-visible-if-empty]");
+  if (visibleIfEmptyCheckbox) {
+    visibleIfEmptyCheckbox.dataset.id = result.id;
+    visibleIfEmptyCheckbox.disabled = false;
+  }
   input.classList.remove("save-error");
   row.classList.remove("dirty");
   setSettingActions(row, false);
@@ -336,6 +331,16 @@ async function saveSettingRow(row) {
 
 async function saveAccountSummary(input) {
   const response = await fetch("/api/account-summary", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: input.dataset.id, value: input.checked }),
+  });
+  const result = await response.json();
+  input.classList.toggle("save-error", !result.ok);
+}
+
+async function saveAccountVisibleIfEmpty(input) {
+  const response = await fetch("/api/account-visible-if-empty", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id: input.dataset.id, value: input.checked }),
@@ -428,6 +433,7 @@ async function saveBudgetRow(row) {
   setBudgetField(row, "day", result.day);
   setBudgetField(row, "label", result.label);
   setBudgetField(row, "amount", result.amount);
+  setBudgetRowTone(row);
   snapshotBudgetRow(row);
   row.classList.remove("dirty", "save-error");
   setBudgetActions(row, false);
@@ -458,13 +464,14 @@ async function deleteBudgetRow(row) {
 }
 
 function createBudgetRow(table) {
+  table.querySelector("[data-empty-budget-row]")?.remove();
   const row = document.createElement("tr");
   row.dataset.budgetRow = "";
   row.dataset.newRow = "true";
   row.className = "dirty";
   row.innerHTML = `
     <td><input data-budget-field="day" data-original="" inputmode="numeric"></td>
-    <td><input data-budget-field="label" data-original=""></td>
+    <td>${labelPickerHtml("", 'data-budget-field="label"')}</td>
     <td><input data-budget-field="amount" data-original="" inputmode="decimal"></td>
     <td class="row-actions">
       <button type="button" class="row-confirm" data-confirm-budget>V</button>
@@ -484,6 +491,7 @@ function restoreBudgetRow(row) {
   row.querySelectorAll("[data-budget-field]").forEach((input) => {
     input.value = input.dataset.original || "";
   });
+  setBudgetRowTone(row);
   row.classList.remove("dirty", "save-error");
   setBudgetActions(row, false);
   resetSaveState();
@@ -491,18 +499,19 @@ function restoreBudgetRow(row) {
 
 function markBudgetDirty(row) {
   row.classList.add("dirty");
+  setBudgetRowTone(row);
   setBudgetActions(row, "edit");
 }
 
+function setBudgetRowTone(row) {
+  const amount = Number((row.querySelector('[data-budget-field="amount"]')?.value || "").replace(",", "."));
+  row.classList.remove("amount-positive", "amount-negative");
+  if (amount > 0) row.classList.add("amount-positive");
+  if (amount < 0) row.classList.add("amount-negative");
+}
+
 function setBudgetActions(row, mode) {
-  const editing = mode === "edit";
-  const deleting = mode === "delete";
-  row.querySelectorAll("[data-confirm-budget], [data-cancel-budget]").forEach((button) => {
-    button.hidden = !editing;
-  });
-  row.querySelectorAll("[data-delete-budget]").forEach((button) => {
-    button.hidden = !deleting;
-  });
+  setActionButtons(row, "budget", mode);
 }
 
 function setBudgetField(row, field, value) {
@@ -585,14 +594,13 @@ function createSettingRow(table) {
   row.innerHTML = `
     ${kind === "account" ? '<td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-account-drag-handle title="Déplacer">↕</button><span class="row-index-value" data-account-index></span></td>' : ""}
     <td><input value="" data-setting-value data-original="" autocomplete="off" placeholder="${placeholder}"></td>
-    ${kind === "account" ? '<td class="center-cell"><input type="checkbox" data-account-summary checked disabled></td>' : ""}
+    ${kind === "account" ? '<td class="center-cell"><input type="checkbox" data-account-summary checked disabled></td><td class="center-cell"><input type="checkbox" data-account-visible-if-empty checked disabled></td>' : ""}
     <td class="row-actions">
       <button type="button" class="row-confirm" data-confirm-setting>V</button>
       <button type="button" class="row-cancel" data-cancel-setting>X</button>
       <button type="button" class="row-delete" data-delete-setting hidden>-</button>
     </td>`;
   table.querySelector("tbody").appendChild(row);
-  if (kind === "account") table.querySelector("tfoot td").colSpan = 4;
   row.querySelector("[data-setting-value]").focus();
 }
 
@@ -615,12 +623,16 @@ function markSettingDirty(row) {
 }
 
 function setSettingActions(row, mode) {
-  const editing = mode === "edit";
+  setActionButtons(row, "setting", mode);
+}
+
+function setActionButtons(row, kind, mode) {
+  const editing = mode === true || mode === "edit";
   const deleting = mode === "delete";
-  row.querySelectorAll("[data-confirm-setting], [data-cancel-setting]").forEach((button) => {
+  row.querySelectorAll(`[data-confirm-${kind}], [data-cancel-${kind}]`).forEach((button) => {
     button.hidden = !editing;
   });
-  row.querySelectorAll("[data-delete-setting]").forEach((button) => {
+  row.querySelectorAll(`[data-delete-${kind}]`).forEach((button) => {
     button.hidden = !deleting;
   });
 }
@@ -633,10 +645,10 @@ function focusSettingDeleteAction(row) {
   setSettingActions(row, "delete");
 }
 
-function labelPickerHtml(value) {
+function labelPickerHtml(value, attrs) {
   return `<div class="label-picker" data-label-picker>
     <div class="label-picker-row">
-      <input value="${escapeHtml(value)}" data-original="${escapeHtml(value)}" autocomplete="off" placeholder="Intitulé" data-save="transaction" data-field="label" data-label-input>
+      <input value="${escapeHtml(value)}" data-original="${escapeHtml(value)}" autocomplete="off" placeholder="Intitulé" ${attrs} data-label-input>
       <button class="label-add" type="button" data-create-label hidden>+</button>
     </div>
     <div class="label-suggestions" data-label-suggestions hidden></div>
@@ -710,6 +722,7 @@ async function createLabelFromPicker(picker) {
   renderLabelSuggestions(picker);
   const row = picker.closest("tr");
   if (row?.closest("[data-transaction-table]")) markRowDirty(row);
+  else if (row?.closest("[data-monthly-budget-table]")) markBudgetDirty(row);
   else if (input.dataset.save) await saveCell(input);
 }
 
@@ -759,6 +772,15 @@ document.addEventListener("focusout", (event) => {
       if (suggestions) suggestions.hidden = true;
     }, 120);
   }
+
+  const labelInput = event.target.closest("[data-label-input]");
+  if (labelInput && !labelInput.dataset.save) {
+    window.setTimeout(() => {
+      const picker = labelInput.closest("[data-label-picker]");
+      const suggestions = picker?.querySelector("[data-label-suggestions]");
+      if (suggestions) suggestions.hidden = true;
+    }, 120);
+  }
 });
 
 document.addEventListener("keydown", async (event) => {
@@ -802,6 +824,13 @@ document.addEventListener("keydown", async (event) => {
     return;
   }
   if (event.key === "Enter" && budgetInput) {
+    const picker = labelInput?.closest("[data-label-picker]");
+    const addButton = picker?.querySelector("[data-create-label]");
+    if (addButton && !addButton.hidden) {
+      event.preventDefault();
+      await createLabelFromPicker(picker);
+      return;
+    }
     event.preventDefault();
     await saveBudgetRow(budgetInput.closest("[data-budget-row]"));
     return;
@@ -832,6 +861,11 @@ document.addEventListener("change", (event) => {
     saveAccountSummary(accountSummary);
     return;
   }
+  const accountVisibleIfEmpty = event.target.closest("[data-account-visible-if-empty]");
+  if (accountVisibleIfEmpty) {
+    saveAccountVisibleIfEmpty(accountVisibleIfEmpty);
+    return;
+  }
   const input = event.target.closest("select[data-save]");
   if (input) saveCell(input);
 });
@@ -844,6 +878,8 @@ document.addEventListener("input", (event) => {
   }
   const budgetInput = event.target.closest("[data-budget-field]");
   if (budgetInput) {
+    const labelInput = event.target.closest("[data-label-input]");
+    if (labelInput) renderLabelSuggestions(labelInput.closest("[data-label-picker]"));
     markBudgetDirty(budgetInput.closest("[data-budget-row]"));
     return;
   }
@@ -929,6 +965,18 @@ document.addEventListener("drop", async (event) => {
 });
 
 document.addEventListener("click", async (event) => {
+  const tabAddToggle = event.target.closest("[data-tab-add-toggle]");
+  if (tabAddToggle) {
+    const menu = tabAddToggle.closest(".tab-add-wrapper")?.querySelector("[data-tab-add-menu]");
+    if (menu) menu.hidden = !menu.hidden;
+    return;
+  }
+  if (!event.target.closest("[data-tab-add-menu]")) {
+    document.querySelectorAll("[data-tab-add-menu]").forEach((menu) => {
+      menu.hidden = true;
+    });
+  }
+
   const focusedTransactionRow = event.target.closest("[data-transaction-table] tr[data-transaction-id]");
   if (focusedTransactionRow && !focusedTransactionRow.classList.contains("dirty")) {
     focusRowDeleteAction(focusedTransactionRow);
@@ -950,6 +998,7 @@ document.addEventListener("click", async (event) => {
     picker.querySelector("[data-label-suggestions]").hidden = true;
     const row = picker.closest("tr");
     if (row?.closest("[data-transaction-table]")) markRowDirty(row);
+    else if (row?.closest("[data-monthly-budget-table]")) markBudgetDirty(row);
     else if (input.dataset.save) await saveCell(input);
     return;
   }

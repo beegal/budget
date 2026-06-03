@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -50,7 +49,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             sort_index INTEGER NOT NULL DEFAULT 1,
-            show_in_summary INTEGER NOT NULL DEFAULT 1
+            show_in_summary INTEGER NOT NULL DEFAULT 1,
+            visible_if_empty INTEGER NOT NULL DEFAULT 1
         );
 
         CREATE TABLE IF NOT EXISTS transaction_labels (
@@ -82,13 +82,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             UNIQUE(month_id, account_id)
         );
 
-        CREATE TABLE IF NOT EXISTS period_label_comments (
-            month_id INTEGER NOT NULL REFERENCES months(id) ON DELETE CASCADE,
-            label_id INTEGER NOT NULL REFERENCES transaction_labels(id) ON DELETE CASCADE,
-            comment TEXT,
-            PRIMARY KEY(month_id, label_id)
-        );
-
         CREATE TABLE IF NOT EXISTS monthly_budget (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 31),
@@ -111,89 +104,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_budget_schedule_match ON budget_schedule(month_id, label, amount, status);
         """
     )
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()}
-    if "comment" not in existing:
-        conn.execute("ALTER TABLE transactions ADD COLUMN comment TEXT")
-    if "sort_index" not in existing:
-        conn.execute("ALTER TABLE transactions ADD COLUMN sort_index INTEGER NOT NULL DEFAULT 1")
-    account_columns = {row["name"] for row in conn.execute("PRAGMA table_info(accounts)").fetchall()}
-    if "show_in_summary" not in account_columns:
-        conn.execute("ALTER TABLE accounts ADD COLUMN show_in_summary INTEGER NOT NULL DEFAULT 1")
-    if "sort_index" not in account_columns:
-        conn.execute("ALTER TABLE accounts ADD COLUMN sort_index INTEGER NOT NULL DEFAULT 1")
-    month_columns = {row["name"] for row in conn.execute("PRAGMA table_info(months)").fetchall()}
-    if "start_date" not in month_columns:
-        conn.execute("ALTER TABLE months ADD COLUMN start_date TEXT")
-    if "end_date" not in month_columns:
-        conn.execute("ALTER TABLE months ADD COLUMN end_date TEXT")
-
     conn.execute(
         """
         INSERT OR IGNORE INTO transaction_labels(name)
         SELECT DISTINCT label FROM transactions WHERE label IS NOT NULL AND TRIM(label) <> ''
         """
     )
-    backfill_period_dates(conn)
-    backfill_account_indexes(conn)
-    backfill_transaction_indexes(conn)
     seed_empty_database(conn)
     conn.commit()
-
-
-def backfill_account_indexes(conn: sqlite3.Connection) -> None:
-    rows = conn.execute(
-        """
-        SELECT id
-        FROM accounts
-        ORDER BY COALESCE(sort_index, 999999), name, id
-        """
-    ).fetchall()
-    for index, row in enumerate(rows, start=1):
-        conn.execute("UPDATE accounts SET sort_index = ? WHERE id = ?", (index, row["id"]))
-
-
-def backfill_transaction_indexes(conn: sqlite3.Connection) -> None:
-    groups = conn.execute(
-        """
-        SELECT month_id, account_id
-        FROM transactions
-        GROUP BY month_id, account_id
-        """
-    ).fetchall()
-    for group in groups:
-        rows = conn.execute(
-            """
-            SELECT id
-            FROM transactions
-            WHERE month_id = ? AND account_id = ?
-            ORDER BY COALESCE(date, '9999-12-31'), COALESCE(sort_index, 999999), id
-            """,
-            (group["month_id"], group["account_id"]),
-        ).fetchall()
-        for index, row in enumerate(rows, start=1):
-            conn.execute("UPDATE transactions SET sort_index = ? WHERE id = ?", (index, row["id"]))
-
-
-def backfill_period_dates(conn: sqlite3.Connection) -> None:
-    current_year = date.today().year
-    rows = conn.execute(
-        """
-        SELECT id, period, start_date, end_date
-        FROM months
-        WHERE period IS NOT NULL
-          AND (start_date IS NULL OR start_date = '' OR end_date IS NULL OR end_date = '')
-        """
-    ).fetchall()
-    for row in rows:
-        match = re.search(r"du\s+(\d{1,2})/(\d{1,2})\s*->\s*(\d{1,2})/(\d{1,2})", row["period"])
-        if not match:
-            continue
-        start_day, start_month, end_day, end_month = (int(value) for value in match.groups())
-        start_year = current_year
-        end_year = current_year + 1 if end_month < start_month else current_year
-        start_value = row["start_date"] or date(start_year, start_month, start_day).isoformat()
-        end_value = row["end_date"] or date(end_year, end_month, end_day).isoformat()
-        conn.execute("UPDATE months SET start_date = ?, end_date = ? WHERE id = ?", (start_value, end_value, row["id"]))
 
 
 def seed_empty_database(conn: sqlite3.Connection) -> None:

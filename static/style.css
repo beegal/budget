@@ -272,9 +272,10 @@ select {
 .tabs {
   border-bottom: 1px solid var(--line);
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 0 0 18px;
-  overflow-x: auto;
+  overflow: visible;
   padding-bottom: 0;
 }
 
@@ -294,6 +295,46 @@ select {
   color: var(--text);
   position: relative;
   top: 1px;
+}
+
+.tab-add-wrapper {
+  display: inline-flex;
+  position: relative;
+}
+
+.tab-add {
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  min-width: 42px;
+  padding: 9px 11px;
+}
+
+.tab-add-menu {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 24px rgba(16, 24, 40, .14);
+  display: grid;
+  gap: 2px;
+  left: 0;
+  min-width: 210px;
+  padding: 6px;
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 8;
+}
+
+.tab-add-menu a {
+  border-radius: 6px;
+  color: var(--text);
+  font-weight: 650;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.tab-add-menu a:hover {
+  background: #edf3f5;
+  text-decoration: none;
 }
 
 .two-col,
@@ -423,6 +464,87 @@ td.editable {
   text-align: center;
 }
 
+.limited-rows {
+  table-layout: fixed;
+}
+
+.settings-table-scroll {
+  max-height: min(760px, calc(100vh - 260px));
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.settings-table-scroll th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.settings-table-scroll tfoot td {
+  background: var(--panel);
+  bottom: 0;
+  position: sticky;
+  z-index: 1;
+}
+
+.account-index-col {
+  width: 72px;
+}
+
+.account-settings-table {
+  min-width: 720px;
+}
+
+.account-settings-table col:nth-child(2) {
+  min-width: 260px;
+}
+
+.account-summary-col {
+  width: 92px;
+}
+
+.account-empty-col {
+  width: 132px;
+}
+
+.budget-day-col {
+  width: 88px;
+}
+
+.budget-amount-col {
+  width: 140px;
+}
+
+.actions-col {
+  width: 92px;
+}
+
+.account-settings-table tr > :nth-child(1) {
+  width: 72px;
+}
+
+.account-settings-table tr > :nth-child(3) {
+  width: 92px;
+}
+
+.account-settings-table tr > :nth-child(4) {
+  width: 132px;
+}
+
+.account-settings-table tr > :nth-child(5),
+.label-settings-table tr > :nth-child(2),
+.monthly-budget-table tr > :nth-child(4) {
+  width: 92px;
+}
+
+.monthly-budget-table tr > :nth-child(1) {
+  width: 88px;
+}
+
+.monthly-budget-table tr > :nth-child(3) {
+  width: 140px;
+}
+
 .sheet-table tr.dragging {
   opacity: .55;
 }
@@ -538,10 +660,6 @@ td.editable:focus {
 .row-cancel,
 .row-delete {
   background: var(--negative);
-}
-
-.add-row-button {
-  width: 100%;
 }
 
 .table-footer-actions {

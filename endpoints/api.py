@@ -20,14 +20,14 @@ def update(path: str, payload: dict[str, object]) -> dict[str, object]:
             return {"ok": True, **reorder_transaction(payload)}
         elif path == "/api/label-from-text":
             return {"ok": True, **create_label_from_text(payload)}
-        elif path == "/api/label-comment":
-            update_label_comment(payload)
         elif path == "/api/account-row":
             return {"ok": True, **save_named_row("accounts", payload)}
         elif path == "/api/account-reorder":
             return {"ok": True, **reorder_account(payload)}
         elif path == "/api/account-summary":
             update_account_summary(payload)
+        elif path == "/api/account-visible-if-empty":
+            update_account_visible_if_empty(payload)
         elif path == "/api/account-balance":
             update_account_balance(payload)
         elif path == "/api/account-delete":
@@ -393,18 +393,6 @@ def update_transaction(payload: dict[str, object]) -> None:
             conn.execute(f"UPDATE transactions SET {field} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (value, tx_id))
 
 
-def update_label_comment(payload: dict[str, object]) -> None:
-    with db() as conn:
-        conn.execute(
-            """
-            INSERT INTO period_label_comments(month_id, label_id, comment)
-            VALUES (?, ?, ?)
-            ON CONFLICT(month_id, label_id) DO UPDATE SET comment = excluded.comment
-            """,
-            (int(payload["month_id"]), int(payload["label_id"]), str(payload.get("value") or "")),
-        )
-
-
 def save_named_row(table: str, payload: dict[str, object]) -> dict[str, object]:
     name = str(payload.get("value") or "").strip()
     if not name:
@@ -468,6 +456,14 @@ def update_account_summary(payload: dict[str, object]) -> None:
     with db() as conn:
         conn.execute(
             "UPDATE accounts SET show_in_summary = ? WHERE id = ?",
+            (1 if payload.get("value") else 0, int(payload["id"])),
+        )
+
+
+def update_account_visible_if_empty(payload: dict[str, object]) -> None:
+    with db() as conn:
+        conn.execute(
+            "UPDATE accounts SET visible_if_empty = ? WHERE id = ?",
             (1 if payload.get("value") else 0, int(payload["id"])),
         )
 

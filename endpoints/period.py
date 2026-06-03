@@ -5,7 +5,7 @@ import sqlite3
 from urllib.parse import parse_qs
 
 from database import db
-from web_helpers import esc, layout, money, period_label
+from web_helpers import esc, icon, label_picker, layout, money, period_label, row_action_buttons
 
 
 def page(period_id: int, query: str) -> bytes:
@@ -15,7 +15,16 @@ def page(period_id: int, query: str) -> bytes:
         period = conn.execute("SELECT * FROM months WHERE id = ?", (period_id,)).fetchone()
         if period is None:
             return layout("Introuvable", "<section class='panel'><h1>Période introuvable</h1></section>")
-        accounts = conn.execute("SELECT id, name FROM accounts ORDER BY sort_index, name").fetchall()
+        accounts = conn.execute(
+            """
+            SELECT a.id, a.name, a.visible_if_empty, COUNT(t.id) AS transaction_count
+            FROM accounts a
+            LEFT JOIN transactions t ON t.account_id = a.id AND t.month_id = ?
+            GROUP BY a.id
+            ORDER BY a.sort_index, a.name
+            """,
+            (period_id,),
+        ).fetchall()
         labels = conn.execute("SELECT id, name FROM transaction_labels ORDER BY name").fetchall()
 
         summary_rows = conn.execute(
@@ -76,12 +85,29 @@ def page(period_id: int, query: str) -> bytes:
                 (period_id, active),
             ).fetchall()
 
+    visible_accounts = [
+        account
+        for account in accounts
+        if account["visible_if_empty"] or account["transaction_count"] or active == str(account["id"])
+    ]
+    hidden_accounts = [account for account in accounts if account not in visible_accounts]
     tabs = [f'<a class="tab {"active" if active == "overview" else ""}" href="/period/{period_id}">Synthèse</a>']
     tabs.append(f'<a class="tab {"active" if active == "budget" else ""}" href="/period/{period_id}?account=budget">Budget</a>')
     tabs.extend(
         f'<a class="tab {"active" if active == str(account["id"]) else ""}" href="/period/{period_id}?account={account["id"]}">{esc(account["name"])}</a>'
-        for account in accounts
+        for account in visible_accounts
     )
+    if hidden_accounts:
+        hidden_account_links = "".join(
+            f'<a href="/period/{period_id}?account={account["id"]}">{esc(account["name"])}</a>'
+            for account in hidden_accounts
+        )
+        tabs.append(
+            f"""<span class="tab-add-wrapper">
+  <button type="button" class="tab tab-add icon-button" data-tab-add-toggle title="Ajouter un compte" aria-label="Ajouter un compte">{icon("plus")}</button>
+  <span class="tab-add-menu" data-tab-add-menu hidden>{hidden_account_links}</span>
+</span>"""
+        )
     if active == "overview":
         content = overview(period_id, summary_rows, balance_rows)
     elif active == "budget":
@@ -217,13 +243,11 @@ def account_tab(
         f"""<tr class="{transaction_amount_class(row["amount"])}" data-transaction-id="{row["id"]}">
   <td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-drag-handle title="Déplacer">↕</button><span class="row-index-value" data-field="sort_index" data-original="{esc(row["sort_index"])}">{esc(row["sort_index"])}</span></td>
   <td class="editable" contenteditable="true" data-save="transaction" data-field="date" data-original="{esc(row["date"])}">{esc(row["date"])}</td>
-  <td>{label_picker(row["label"])}</td>
+  <td>{label_picker(row["label"], 'data-save="transaction" data-field="label"')}</td>
   <td class="editable num" contenteditable="true" data-save="transaction" data-field="amount" data-original="{esc(row["amount"])}">{esc(row["amount"])}</td>
   <td class="editable" contenteditable="true" data-save="transaction" data-field="comment" data-original="{esc(row["comment"])}">{esc(row["comment"])}</td>
   <td class="row-actions">
-    <button type="button" class="row-confirm" data-confirm-row hidden>V</button>
-    <button type="button" class="row-cancel" data-cancel-row hidden>X</button>
-    <button type="button" class="row-delete" data-delete-row hidden>-</button>
+    {row_action_buttons("row")}
   </td>
 </tr>"""
         for row in transactions
@@ -243,7 +267,7 @@ def account_tab(
         <td colspan="5"></td>
         <td class="row-actions table-footer-actions">
           <button type="button" class="row-confirm icon-button" data-add-row title="Ajouter une ligne" aria-label="Ajouter une ligne">{icon("plus")}</button>
-          <button type="button" class="row-delete icon-button" data-remove-all title="Supprimer toutes les lignes" aria-label="Supprimer toutes les lignes">{icon("trash")}</button>
+          <button type="button" class="row-delete icon-button" data-remove-all title="Supprimer toutes les lignes" aria-label="Supprimer toutes les lignes">{icon("clear-list")}</button>
           <a class="button ghost import-button icon-button" href="/period/{period_id}/import?account={account["id"]}" title="Importer CSV" aria-label="Importer CSV">{icon("upload")}</a>
         </td>
       </tr>
@@ -258,26 +282,3 @@ def transaction_amount_class(amount: float) -> str:
     if amount < 0:
         return "amount-negative"
     return ""
-
-
-def icon(name: str) -> str:
-    icons = {
-        "plus": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
-        "trash": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/></svg>',
-        "upload": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>',
-        "hourglass": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M5 20h14M7 4c0 5 5 6 5 8s-5 3-5 8M17 4c0 5-5 6-5 8s5 3 5 8"/></svg>',
-        "x": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
-        "check": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg>',
-    }
-    return icons[name]
-
-
-def label_picker(label: str, save: bool = True) -> str:
-    attrs = 'data-save="transaction" data-field="label"' if save else 'name="label" required'
-    return f"""<div class="label-picker" data-label-picker>
-  <div class="label-picker-row">
-    <input value="{esc(label)}" data-original="{esc(label)}" autocomplete="off" placeholder="Intitulé" {attrs} data-label-input>
-    <button class="label-add" type="button" data-create-label hidden>+</button>
-  </div>
-  <div class="label-suggestions" data-label-suggestions hidden></div>
-</div>"""
