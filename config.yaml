@@ -1,0 +1,6 @@
+# Configuration du budget
+i18n:
+  default-locale: fr_FR.UTF-8
+  date-format: jj/mm/yy
+display:
+  number-decimals: 2

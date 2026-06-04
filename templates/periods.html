@@ -1,0 +1,26 @@
+<section class="page-title">
+  <div>
+    <p class="eyebrow">Application budget générique</p>
+    <h1>Périodes</h1>
+  </div>
+  <span class="save-state" data-save-state></span>
+</section>
+<section class="grid">
+  <article class="card period-card period-create-card" data-period-create-card>
+    <button type="button" class="period-create-toggle" data-period-create-toggle title="Créer une période">+</button>
+    <form method="post" action="/periods/create" class="period-create-form" data-period-create-form hidden>
+      <input name="name" placeholder="Nom de la période" required>
+      <div class="period-create-dates">
+        <span>du</span>
+        <input name="start_date" value="${today}" placeholder="26 mars 2026" required>
+        <span>-&gt;</span>
+        <input name="end_date" value="en cours" placeholder="en cours">
+      </div>
+      <div class="period-create-actions">
+        <button type="submit" class="row-confirm">V</button>
+        <button type="button" class="row-cancel" data-period-create-cancel>X</button>
+      </div>
+    </form>
+  </article>
+  ${cards}
+</section>

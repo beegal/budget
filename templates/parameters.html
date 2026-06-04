@@ -1,0 +1,43 @@
+<section class="page-title">
+  <div>
+    <p class="eyebrow">Comptes et intitulés</p>
+    <h1>Paramètres</h1>
+  </div>
+  <span class="save-state" data-save-state></span>
+</section>
+<script>window.BUDGET_LABELS = ${labels_json};</script>
+<section class="settings-grid">
+  <div class="panel">
+    <h2>Comptes</h2>
+    <div class="settings-table-scroll">
+    <table class="sheet-table settings-table limited-rows account-settings-table" data-settings-table data-kind="account">
+      <colgroup><col class="account-index-col"><col><col class="account-summary-col"><col class="account-empty-col"><col class="actions-col"></colgroup>
+      <thead><tr><th class="row-index-head">#</th><th>Compte</th><th>Synthèse</th><th>Visible si vide</th><th></th></tr></thead>
+      <tbody>${account_rows}</tbody>
+      <tfoot><tr><td></td><td></td><td></td><td></td><td class="row-actions"><button type="button" class="add-row-button" data-add-setting-row>+</button></td></tr></tfoot>
+    </table>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Intitulés</h2>
+    <div class="settings-table-scroll">
+    <table class="sheet-table settings-table limited-rows label-settings-table" data-settings-table data-kind="label">
+      <colgroup><col><col><col class="actions-col"></colgroup>
+      <thead><tr><th>Nom de groupage</th><th>Sous catégorie</th><th></th></tr></thead>
+      <tbody>${label_rows}</tbody>
+      <tfoot><tr><td></td><td></td><td class="row-actions"><button type="button" class="add-row-button" data-add-setting-row>+</button></td></tr></tfoot>
+    </table>
+    </div>
+  </div>
+  <div class="panel wide">
+    <h2>Budget mensuel</h2>
+    <div class="settings-table-scroll">
+    <table class="sheet-table limited-rows monthly-budget-table" data-monthly-budget-table>
+      <colgroup><col class="budget-day-col"><col><col class="budget-amount-col"><col class="actions-col"></colgroup>
+      <thead><tr><th>Jour</th><th>Intitulé</th><th class="num">Montant</th><th></th></tr></thead>
+      <tbody>${budget_html}</tbody>
+      <tfoot><tr><td></td><td></td><td></td><td class="row-actions"><button type="button" class="add-row-button" data-add-budget-row>+</button></td></tr></tfoot>
+    </table>
+    </div>
+  </div>
+</section>

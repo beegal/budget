@@ -2,12 +2,103 @@ from __future__ import annotations
 
 import html
 import sqlite3
+import string
+from datetime import date
+from pathlib import Path
+
+from config import DATE_ORDER, MONTH_LOOKUP, NUMBER_DECIMALS, strip_accents
+
+TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
-def money(value: float | int | None) -> str:
+def render_template(name: str, **context: object) -> str:
+    template_path = TEMPLATES_DIR / name
+    if not template_path.exists():
+        return f"Template {name} not found"
+    template_content = template_path.read_text(encoding="utf-8")
+    return string.Template(template_content).safe_substitute(**context)
+
+
+def normalize_date(value: object) -> str | None:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return None
+
+    # Replace separators with spaces for easier splitting
+    for sep in ("-", "/", ".", ","):
+        raw = raw.replace(sep, " ")
+    parts = raw.split()
+
+    try:
+        if len(parts) == 3:
+            if len(parts[0]) == 4:
+                year = int(parts[0])
+                month = parse_month(parts[1])
+                day = int(parts[2])
+            else:
+                first = int(parts[0])
+                second = parse_month(parts[1])
+                day, month = numeric_day_month(first, second)
+                year = parse_year(parts[2])
+        elif len(parts) == 2:
+            first = int(parts[0])
+            second = parse_month(parts[1])
+            day, month = numeric_day_month(first, second)
+            year = date.today().year
+        else:
+            raise ValueError("Format de date inconnu")
+
+        return date(year, month, day).isoformat()
+    except (ValueError, KeyError, IndexError):
+        raise ValueError(f"Date invalide: {value}")
+
+
+def parse_month(value: str) -> int:
+    normalized = strip_accents(value)
+    if normalized in MONTH_LOOKUP:
+        return MONTH_LOOKUP[normalized]
+    return int(value)
+
+
+def numeric_day_month(first: int, second: int) -> tuple[int, int]:
+    if first > 12 and second <= 12:
+        return first, second
+    if second > 12 and first <= 12:
+        return second, first
+    if DATE_ORDER == "mdy":
+        return second, first
+    return first, second
+
+
+def parse_year(value: str) -> int:
+    year = int(value)
+    if len(value) == 2:
+        return 2000 + year
+    return year
+
+
+def money(value: float | int | str | None) -> str:
+    return f"{format_number(value)} EUR"
+
+
+def format_number(value: float | int | str | None) -> str:
     value = float(value or 0)
     sign = "-" if value < 0 else ""
-    return f"{sign}{abs(value):,.2f} EUR".replace(",", " ").replace(".", ",")
+    pattern = f"{{:,.{NUMBER_DECIMALS}f}}"
+    return f"{sign}{pattern.format(abs(value))}".replace(",", " ").replace(".", ",")
+
+
+def format_date(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = date.fromisoformat(raw)
+    except ValueError:
+        return raw
+    if DATE_ORDER == "mdy":
+        return parsed.strftime("%m/%d/%Y")
+    return parsed.strftime("%d/%m/%Y")
 
 
 def esc(value: object) -> str:
@@ -21,12 +112,11 @@ def one(data: dict[str, list[str]], key: str, default: str = "") -> str:
 def period_label(row: sqlite3.Row) -> str:
     start = row["start_date"] if "start_date" in row.keys() else None
     end = row["end_date"] if "end_date" in row.keys() else None
-    legacy = row["period"] if "period" in row.keys() else None
     if start and end:
-        return f"du {start} -> {end}"
+        return f"du {format_date(start)} -> {format_date(end)}"
     if start:
-        return f"du {start} -> en cours"
-    return legacy or "Période libre"
+        return f"du {format_date(start)} -> en cours"
+    return "Période libre"
 
 
 def row_options(rows: list[sqlite3.Row], selected: object | None, empty_label: str | None = None) -> str:
@@ -66,32 +156,15 @@ def icon(name: str) -> str:
         "plus": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
         "clear-list": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M4 12h7M4 17h5M15 10l5 5M20 10l-5 5"/></svg>',
         "upload": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>',
-        "hourglass": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M5 20h14M7 4c0 5 5 6 5 8s-5 3-5 8M17 4c0 5-5 6-5 8s5 3 5 8"/></svg>',
         "x": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
         "check": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg>',
+        "trash": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M7 7l1 15h8l1-15M10 11v6M14 11v6"/></svg>',
+        "ban": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M7.8 7.8l8.4 8.4"/></svg>',
+        "send": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h12M12 7l5 5-5 5M18 5h2v14h-2"/></svg>',
+        "warning": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 8v6M12 17h.01"/></svg>',
     }
     return icons[name]
 
 
 def layout(title: str, body: str) -> bytes:
-    return f"""<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{esc(title)} - Budget</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <script defer src="/static/app.js"></script>
-</head>
-<body>
-  <header class="topbar">
-    <a class="brand" href="/">Budget</a>
-    <nav>
-      <a href="/">Périodes</a>
-      <a href="/parameters">Paramètres</a>
-      <a href="/transactions">Transactions</a>
-    </nav>
-  </header>
-  <main>{body}</main>
-</body>
-</html>""".encode("utf-8")
+    return render_template("layout.html", title=esc(title), body=body).encode("utf-8")

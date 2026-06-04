@@ -5,7 +5,53 @@ function setSaveState(element, message, isError = false) {
 }
 
 function resetSaveState() {
-  setSaveState(document.querySelector("[data-save-state]"), "Modifications à valider");
+  setSaveState(document.querySelector("[data-save-state]"), "");
+}
+
+function parseDisplayNumber(value) {
+  return Number(String(value || "").replace(/\s/g, "").replace(",", "."));
+}
+
+function formatDisplayNumber(value, decimals = 2) {
+  const sign = value < 0 ? "-" : "";
+  return `${sign}${Math.abs(value).toLocaleString("fr-BE", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}`;
+}
+
+function formatDisplayMoney(value, decimals = 2) {
+  return `${formatDisplayNumber(value, decimals)} EUR`;
+}
+
+function updateTransactionRunningBalances(table) {
+  if (!table) return;
+  const openingRaw = table.dataset.openingBalance || "";
+  const balanceDefined = openingRaw.trim() !== "";
+  const decimals = Number(table.dataset.numberDecimals || 2);
+  let runningBalance = balanceDefined ? parseDisplayNumber(openingRaw) : 0;
+  let operationsTotal = 0;
+
+  table.querySelectorAll("tbody tr").forEach((row) => {
+    const index = row.querySelector(".row-index-value");
+    const title = balanceDefined ? `Solde: ${formatDisplayMoney(runningBalance, decimals)}` : "Solde: non défini";
+    if (index) {
+      index.title = title;
+      index.setAttribute("aria-label", title);
+    }
+    const amount = parseDisplayNumber(getRowField(row, "amount"));
+    if (Number.isFinite(amount)) {
+      operationsTotal += amount;
+      if (balanceDefined) runningBalance += amount;
+    }
+  });
+
+  const currentBalance = table.querySelector("[data-current-balance-text]");
+  if (currentBalance) {
+    currentBalance.textContent = balanceDefined
+      ? `Solde actuel : ${formatDisplayMoney(runningBalance, decimals)} - Total opérations : ${formatDisplayMoney(operationsTotal, decimals)}`
+      : `Solde actuel : non défini - Total opérations : ${formatDisplayMoney(operationsTotal, decimals)}`;
+  }
 }
 
 
@@ -20,12 +66,15 @@ async function saveCell(element) {
     payload.id = row.dataset.transactionId;
     payload.field = element.dataset.field;
   } else if (kind === "account-balance") {
-    payload.month_id = element.dataset.monthId;
+    payload.period_id = element.dataset.periodId;
     payload.account_id = element.dataset.accountId;
     payload.field = element.dataset.field;
   } else if (kind === "label") {
     const row = element.closest("[data-label-id]");
     payload.id = row.dataset.labelId;
+    payload.field = element.dataset.field;
+  } else if (kind === "period-date") {
+    payload.id = element.dataset.id;
     payload.field = element.dataset.field;
   } else {
     payload.id = element.dataset.id;
@@ -48,9 +97,112 @@ async function saveCell(element) {
     return;
   }
   element.classList.remove("save-error");
+  if (kind === "period-date") {
+    element.value = result.value || "";
+    window.location.reload();
+    return;
+  }
+  if (result.value !== undefined) {
+    if (element.matches("input, select, textarea")) element.value = result.value;
+    else element.textContent = result.value;
+    element.dataset.before = result.value;
+    element.dataset.original = result.value;
+    if (kind === "transaction" && element.dataset.field === "date") {
+      element.closest("[data-transaction-id]").dataset.sortDate = result.date_sort || "";
+    }
+  }
   element.classList.add("saved");
   setSaveState(state, "Enregistré");
   setTimeout(() => element.classList.remove("saved"), 700);
+}
+
+function openAccountBalanceEditor(cell) {
+  const display = cell.querySelector("[data-balance-display]");
+  const editor = cell.querySelector("[data-balance-edit]");
+  const input = cell.querySelector("[data-balance-input]");
+  if (!display || !editor || !input) return;
+  input.value = cell.dataset.original || "";
+  display.hidden = true;
+  editor.hidden = false;
+  input.focus();
+  input.select();
+}
+
+function cancelAccountBalanceEditor(cell) {
+  const display = cell.querySelector("[data-balance-display]");
+  const editor = cell.querySelector("[data-balance-edit]");
+  const input = cell.querySelector("[data-balance-input]");
+  if (input) input.value = cell.dataset.original || "";
+  if (editor) editor.hidden = true;
+  if (display) display.hidden = false;
+  cell.classList.remove("save-error");
+  resetSaveState();
+}
+
+function setAccountBalanceTone(cell, value) {
+  const amount = parseDisplayNumber(value);
+  cell.classList.remove("positive", "negative");
+  if (!value) return;
+  if (amount > 0) cell.classList.add("positive");
+  if (amount < 0) cell.classList.add("negative");
+}
+
+async function saveAccountBalanceEditor(cell) {
+  const state = document.querySelector("[data-save-state]");
+  const input = cell.querySelector("[data-balance-input]");
+  const display = cell.querySelector("[data-balance-display]");
+  const editor = cell.querySelector("[data-balance-edit]");
+  const value = input?.value.trim() || "";
+  setSaveState(state, "Enregistrement...");
+  const response = await fetch("/api/account-balance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      period_id: cell.dataset.periodId,
+      account_id: cell.dataset.accountId,
+      field: "opening",
+      value,
+    }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    cell.classList.add("save-error");
+    setSaveState(state, result.error || "Erreur", true);
+    return;
+  }
+  const savedValue = result.value || "";
+  cell.dataset.original = savedValue;
+  if (input) input.value = savedValue;
+  if (display) {
+    display.textContent = result.display || "non défini";
+    display.classList.toggle("balance-undefined", !savedValue);
+    display.hidden = false;
+  }
+  if (editor) editor.hidden = true;
+  setAccountBalanceTone(cell, savedValue);
+  const currentCell = cell.closest("tr")?.querySelector("[data-account-current-cell]");
+  if (currentCell) {
+    currentCell.textContent = result.current_display || "non défini";
+    currentCell.classList.toggle("balance-undefined", !result.current);
+    setAccountBalanceTone(currentCell, result.current || "");
+  }
+  cell.classList.remove("save-error");
+  setSaveState(state, "Enregistré");
+}
+
+async function hideAccountTab(button) {
+  if (button.disabled) return;
+  const response = await fetch("/api/account-visible-if-empty", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: button.dataset.accountId, value: false }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    setSaveState(document.querySelector("[data-save-state]"), result.error || "Erreur", true);
+    return;
+  }
+  window.location.href = `/period/${button.dataset.periodId}`;
 }
 
 async function saveTransactionRow(row) {
@@ -58,7 +210,7 @@ async function saveTransactionRow(row) {
   const table = row.closest("[data-transaction-table]");
   const payload = {
     id: row.dataset.transactionId || null,
-    month_id: table.dataset.monthId,
+    period_id: table.dataset.periodId,
     account_id: table.dataset.accountId,
     date: getRowField(row, "date"),
     label: getRowField(row, "label"),
@@ -80,7 +232,11 @@ async function saveTransactionRow(row) {
   }
 
   row.dataset.transactionId = result.id;
+  row.dataset.sortDate = result.date_sort || "";
   setRowField(row, "date", result.date || "");
+  setRowField(row, "label", result.label || "");
+  setRowField(row, "amount", result.amount || "");
+  setRowField(row, "comment", result.comment || "");
   setRowField(row, "sort_index", result.sort_index || "");
   setTransactionRowTone(row);
   delete row.dataset.newRow;
@@ -89,6 +245,7 @@ async function saveTransactionRow(row) {
   setRowActions(row, false);
   insertTransactionRowSorted(row);
   applyTransactionIndexes(table, result.rows || []);
+  updateTransactionRunningBalances(table);
   flashSavedRow(row);
   setSaveState(state, "Enregistré");
 }
@@ -114,6 +271,7 @@ async function deleteTransactionRow(row) {
   }
   row.remove();
   applyTransactionIndexes(table, result.rows || []);
+  updateTransactionRunningBalances(table);
   setSaveState(state, "Supprimé");
 }
 
@@ -123,7 +281,7 @@ async function clearTransactionTable(table) {
   const response = await fetch("/api/transaction-clear", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ month_id: table.dataset.monthId, account_id: table.dataset.accountId }),
+    body: JSON.stringify({ period_id: table.dataset.periodId, account_id: table.dataset.accountId }),
   });
   const result = await response.json();
   if (!result.ok) {
@@ -131,6 +289,7 @@ async function clearTransactionTable(table) {
     return;
   }
   table.querySelector("tbody").innerHTML = "";
+  updateTransactionRunningBalances(table);
   setSaveState(state, "Supprimé");
 }
 
@@ -150,14 +309,14 @@ function setRowField(row, field, value) {
 }
 
 function setTransactionRowTone(row) {
-  const amount = Number(getRowField(row, "amount").replace(",", "."));
+  const amount = parseDisplayNumber(getRowField(row, "amount"));
   row.classList.remove("amount-positive", "amount-negative");
   if (amount > 0) row.classList.add("amount-positive");
   if (amount < 0) row.classList.add("amount-negative");
 }
 
 function transactionSortKey(row) {
-  const date = getRowField(row, "date") || "9999-12-31";
+  const date = row.dataset.sortDate || getRowField(row, "date") || "9999-12-31";
   const index = Number(getRowField(row, "sort_index") || Number.MAX_SAFE_INTEGER);
   const id = Number(row.dataset.transactionId || Number.MAX_SAFE_INTEGER);
   return { date, index, id };
@@ -187,6 +346,7 @@ function applyTransactionIndexes(table, rows) {
     const row = table.querySelector(`tr[data-transaction-id="${item.id}"]`);
     if (!row) continue;
     setRowField(row, "date", item.date || "");
+    row.dataset.sortDate = item.date_sort || "";
     setRowField(row, "sort_index", item.sort_index || "");
     snapshotRow(row);
   }
@@ -194,6 +354,7 @@ function applyTransactionIndexes(table, rows) {
     const row = table.querySelector(`tr[data-transaction-id="${item.id}"]`);
     if (row) tbody.appendChild(row);
   }
+  updateTransactionRunningBalances(table);
 }
 
 function flashSavedRow(row) {
@@ -224,8 +385,10 @@ async function reorderTransactionRow(row, targetRow, position) {
     return;
   }
   setRowField(row, "date", result.date || "");
+  row.dataset.sortDate = result.date_sort || "";
   setRowField(row, "sort_index", result.sort_index || "");
   applyTransactionIndexes(table, result.rows || []);
+  updateTransactionRunningBalances(table);
   row.classList.remove("save-error");
   flashSavedRow(row);
   setSaveState(state, "Ordre enregistré");
@@ -254,6 +417,7 @@ function restoreRow(row) {
   setTransactionRowTone(row);
   row.classList.remove("dirty", "save-error");
   setRowActions(row, false);
+  updateTransactionRunningBalances(row.closest("[data-transaction-table]"));
   resetSaveState();
 }
 
@@ -291,13 +455,14 @@ function createEmptyRow(table) {
       <button type="button" class="row-delete" data-delete-row hidden>-</button>
     </td>`;
   table.querySelector("tbody").appendChild(row);
+  updateTransactionRunningBalances(table);
   row.querySelector('[data-field="date"]').focus();
 }
 
 async function saveSettingRow(row) {
-  const input = row.querySelector("[data-setting-value]");
-  const value = input.value.trim();
   const kind = row.dataset.kind || row.closest("[data-settings-table]")?.dataset.kind;
+  const inputs = settingInputs(row);
+  const value = settingRowValue(row, kind);
   const response = await fetch(`/api/${kind}-row`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -305,13 +470,12 @@ async function saveSettingRow(row) {
   });
   const result = await response.json();
   if (!result.ok) {
-    input.classList.add("save-error");
+    inputs.forEach((input) => input.classList.add("save-error"));
     return;
   }
   row.dataset.id = result.id;
   delete row.dataset.newRow;
-  input.value = result.value;
-  input.dataset.original = result.value;
+  setSettingRowValue(row, kind, result.value);
   const summaryCheckbox = row.querySelector("[data-account-summary]");
   if (summaryCheckbox) {
     summaryCheckbox.dataset.id = result.id;
@@ -322,11 +486,52 @@ async function saveSettingRow(row) {
     visibleIfEmptyCheckbox.dataset.id = result.id;
     visibleIfEmptyCheckbox.disabled = false;
   }
-  input.classList.remove("save-error");
+  inputs.forEach((input) => input.classList.remove("save-error"));
   row.classList.remove("dirty");
   setSettingActions(row, false);
   if (kind === "account") applyAccountIndexes(row.closest("[data-settings-table]"), result.rows || []);
   if (kind === "label") addLabelName(result.value);
+}
+
+function settingInputs(row) {
+  return [...row.querySelectorAll("[data-setting-value]")];
+}
+
+function splitSettingLabel(value) {
+  const [group, ...rest] = String(value || "").split(" - ");
+  return {
+    group: group.trim(),
+    subcategory: rest.join(" - ").trim(),
+  };
+}
+
+function settingRowValue(row, kind) {
+  if (kind !== "label") return row.querySelector("[data-setting-value]")?.value.trim() || "";
+  const group = row.querySelector('[data-setting-part="group"]')?.value.trim() || "";
+  const subcategory = row.querySelector('[data-setting-part="subcategory"]')?.value.trim() || "";
+  return subcategory ? `${group} - ${subcategory}` : group;
+}
+
+function setSettingRowValue(row, kind, value) {
+  if (kind !== "label") {
+    const input = row.querySelector("[data-setting-value]");
+    if (input) {
+      input.value = value;
+      input.dataset.original = value;
+    }
+    return;
+  }
+  const parts = splitSettingLabel(value);
+  const group = row.querySelector('[data-setting-part="group"]');
+  const subcategory = row.querySelector('[data-setting-part="subcategory"]');
+  if (group) {
+    group.value = parts.group;
+    group.dataset.original = parts.group;
+  }
+  if (subcategory) {
+    subcategory.value = parts.subcategory;
+    subcategory.dataset.original = parts.subcategory;
+  }
 }
 
 async function saveAccountSummary(input) {
@@ -357,7 +562,7 @@ async function deleteSettingRow(row) {
     resetSaveState();
     return;
   }
-  const input = row.querySelector("[data-setting-value]");
+  const inputs = settingInputs(row);
   setSaveState(state, "Suppression...");
   const response = await fetch(`/api/${kind}-delete`, {
     method: "POST",
@@ -366,7 +571,7 @@ async function deleteSettingRow(row) {
   });
   const result = await response.json();
   if (!result.ok) {
-    input.classList.add("save-error");
+    inputs.forEach((input) => input.classList.add("save-error"));
     setSaveState(state, result.error || "Erreur", true);
     return;
   }
@@ -504,7 +709,7 @@ function markBudgetDirty(row) {
 }
 
 function setBudgetRowTone(row) {
-  const amount = Number((row.querySelector('[data-budget-field="amount"]')?.value || "").replace(",", "."));
+  const amount = parseDisplayNumber(row.querySelector('[data-budget-field="amount"]')?.value || "");
   row.classList.remove("amount-positive", "amount-negative");
   if (amount > 0) row.classList.add("amount-positive");
   if (amount < 0) row.classList.add("amount-negative");
@@ -542,18 +747,21 @@ async function cancelBudgetSchedule(row) {
   if (status) status.textContent = result.status_label || "Annulé";
   row.querySelector("[data-budget-schedule-cancel]")?.remove();
   row.querySelector("[data-budget-schedule-confirm]")?.remove();
-  row.querySelector(".icon-status")?.remove();
   const list = row.querySelector("[data-budget-account-list]");
   if (list) list.hidden = true;
   flashSavedRow(row);
 }
 
+function closeBudgetAccountLists(exceptList = null) {
+  document.querySelectorAll("[data-budget-account-list]").forEach((candidate) => {
+    if (candidate !== exceptList) candidate.hidden = true;
+  });
+}
+
 function toggleBudgetAccountList(row) {
   const list = row.querySelector("[data-budget-account-list]");
   if (!list) return;
-  document.querySelectorAll("[data-budget-account-list]").forEach((candidate) => {
-    if (candidate !== list) candidate.hidden = true;
-  });
+  closeBudgetAccountLists(list);
   list.hidden = !list.hidden;
 }
 
@@ -575,17 +783,205 @@ async function instantiateBudgetSchedule(button) {
     return;
   }
   row.classList.remove("save-error");
+  row.classList.remove("budget-status-scheduled", "budget-status-cancel");
+  row.classList.add("budget-status-found");
+  const status = row.querySelector("[data-budget-status]");
+  if (status) status.textContent = result.status_label || "Trouvé";
+  row.querySelector("[data-budget-schedule-cancel]")?.remove();
+  row.querySelector("[data-budget-schedule-confirm]")?.remove();
   row.querySelector("[data-budget-account-list]").hidden = true;
   if (output) {
     output.hidden = false;
-    output.innerHTML = `Créé dans <a href="/period/${row.closest("[data-budget-schedule-table]").dataset.monthId}?account=${result.account_id}">${escapeHtml(result.account_name)}</a>, ligne #${escapeHtml(result.sort_index)} (${escapeHtml(result.date)})`;
+    output.innerHTML = `Créé dans <a href="/period/${row.closest("[data-budget-schedule-table]").dataset.periodId}?account=${result.account_id}">${escapeHtml(result.account_name)}</a>, ligne #${escapeHtml(result.sort_index)} (${escapeHtml(result.date)})`;
   }
   flashSavedRow(row);
 }
 
+function openPeriodRangeEditor(range) {
+  const display = range.querySelector("[data-period-range-display]");
+  const editor = range.querySelector("[data-period-range-edit]");
+  if (!display || !editor) return;
+  display.hidden = true;
+  editor.hidden = false;
+  editor.querySelector("[data-period-start]")?.focus();
+}
+
+function cancelPeriodRangeEditor(range) {
+  const display = range.querySelector("[data-period-range-display]");
+  const editor = range.querySelector("[data-period-range-edit]");
+  const start = range.querySelector("[data-period-start]");
+  const end = range.querySelector("[data-period-end]");
+  if (start) start.value = start.dataset.original || "";
+  if (end) end.value = end.dataset.original || "";
+  range.classList.remove("save-error");
+  if (editor) editor.hidden = true;
+  if (display) display.hidden = false;
+  resetSaveState();
+}
+
+async function savePeriodRange(range) {
+  const state = document.querySelector("[data-save-state]");
+  const start = range.querySelector("[data-period-start]");
+  const end = range.querySelector("[data-period-end]");
+  setSaveState(state, "Enregistrement...");
+  const response = await fetch("/api/period-range", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: range.dataset.id,
+      start_date: start?.value.trim() || "",
+      end_date: end?.value.trim() || "",
+    }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    range.classList.add("save-error");
+    setSaveState(state, result.error || "Erreur", true);
+    return;
+  }
+  if (start) {
+    start.value = result.start_date || "";
+    start.dataset.original = start.value;
+  }
+  if (end) {
+    end.value = result.end_date || "";
+    end.dataset.original = end.value;
+  }
+  window.location.reload();
+}
+
+function openPeriodNameEditor(wrapper) {
+  const display = wrapper.querySelector("[data-period-name-display]");
+  const editor = wrapper.querySelector("[data-period-name-edit]");
+  if (!display || !editor) return;
+  display.hidden = true;
+  editor.hidden = false;
+  const input = editor.querySelector("[data-period-name-input]");
+  input?.focus();
+  input?.select();
+}
+
+function cancelPeriodNameEditor(wrapper) {
+  const display = wrapper.querySelector("[data-period-name-display]");
+  const editor = wrapper.querySelector("[data-period-name-edit]");
+  const input = wrapper.querySelector("[data-period-name-input]");
+  if (input) input.value = input.dataset.original || "";
+  wrapper.classList.remove("save-error");
+  if (editor) editor.hidden = true;
+  if (display) display.hidden = false;
+  resetSaveState();
+}
+
+async function savePeriodName(wrapper) {
+  const state = document.querySelector("[data-save-state]");
+  const input = wrapper.querySelector("[data-period-name-input]");
+  setSaveState(state, "Enregistrement...");
+  const response = await fetch("/api/period-name", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: wrapper.dataset.id,
+      name: input?.value.trim() || "",
+    }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    wrapper.classList.add("save-error");
+    setSaveState(state, result.error || "Erreur", true);
+    return;
+  }
+  if (input) {
+    input.value = result.name || "";
+    input.dataset.original = input.value;
+  }
+  window.location.reload();
+}
+
+async function deletePeriod(button) {
+  const state = document.querySelector("[data-save-state]");
+  setSaveState(state, "Suppression...");
+  const response = await fetch("/api/period-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: button.dataset.id }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    setSaveState(state, result.error || "Erreur", true);
+    return;
+  }
+  window.location.reload();
+}
+
+function createBudgetScheduleRow(table) {
+  table.querySelector("tbody tr td[colspan]")?.closest("tr")?.remove();
+  const index = table.querySelectorAll("tbody tr").length + 1;
+  const row = document.createElement("tr");
+  row.className = "budget-schedule-row budget-status-scheduled dirty";
+  row.dataset.newRow = "true";
+  row.dataset.budgetScheduleNewRow = "true";
+  row.innerHTML = `
+    <td class="row-index-cell"><span class="row-index-value">${index}</span></td>
+    <td>${labelPickerHtml("", 'data-budget-schedule-field="label"')}</td>
+    <td><input class="num" data-budget-schedule-field="amount" inputmode="decimal" placeholder="0"></td>
+    <td><span class="budget-status-pill">Planifié</span></td>
+    <td class="row-actions">
+      <button type="button" class="row-confirm" data-confirm-budget-schedule-row>V</button>
+      <button type="button" class="row-cancel" data-cancel-budget-schedule-row>X</button>
+    </td>`;
+  table.querySelector("tbody").appendChild(row);
+  row.querySelector("[data-label-input]")?.focus();
+}
+
+function cancelBudgetScheduleRow(row) {
+  if (row?.dataset.newRow === "true") {
+    row.remove();
+    resetSaveState();
+  }
+}
+
+async function saveBudgetScheduleRow(row) {
+  const state = document.querySelector("[data-save-state]");
+  const table = row.closest("[data-budget-schedule-table]");
+  const label = row.querySelector("[data-label-input]")?.value.trim() || "";
+  const amount = row.querySelector('[data-budget-schedule-field="amount"]')?.value.trim() || "";
+  setSaveState(state, "Enregistrement...");
+  const response = await fetch("/api/budget-schedule-row", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ period_id: table.dataset.periodId, label, amount }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    row.classList.add("save-error");
+    setSaveState(state, result.error || "Erreur", true);
+    return;
+  }
+  window.location.reload();
+}
+
+async function clearBudgetSchedule(table) {
+  const state = document.querySelector("[data-save-state]");
+  setSaveState(state, "Suppression...");
+  const response = await fetch("/api/budget-schedule-clear", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ period_id: table.dataset.periodId }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    setSaveState(state, result.error || "Erreur", true);
+    return;
+  }
+  window.location.reload();
+}
+
 function createSettingRow(table) {
   const kind = table.dataset.kind;
-  const placeholder = kind === "account" ? "Nouveau compte" : "Nouvel intitulé";
+  const valueCells = kind === "label"
+    ? `<td><input value="" data-setting-value data-setting-part="group" data-original="" autocomplete="off" placeholder="Nom de groupage"></td>
+    <td><input value="" data-setting-value data-setting-part="subcategory" data-original="" autocomplete="off" placeholder="Sous catégorie"></td>`
+    : `<td><input value="" data-setting-value data-original="" autocomplete="off" placeholder="Nouveau compte"></td>`;
   const row = document.createElement("tr");
   row.dataset.settingsRow = "";
   row.dataset.kind = kind;
@@ -593,7 +989,7 @@ function createSettingRow(table) {
   row.className = "dirty";
   row.innerHTML = `
     ${kind === "account" ? '<td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-account-drag-handle title="Déplacer">↕</button><span class="row-index-value" data-account-index></span></td>' : ""}
-    <td><input value="" data-setting-value data-original="" autocomplete="off" placeholder="${placeholder}"></td>
+    ${valueCells}
     ${kind === "account" ? '<td class="center-cell"><input type="checkbox" data-account-summary checked disabled></td><td class="center-cell"><input type="checkbox" data-account-visible-if-empty checked disabled></td>' : ""}
     <td class="row-actions">
       <button type="button" class="row-confirm" data-confirm-setting>V</button>
@@ -604,14 +1000,34 @@ function createSettingRow(table) {
   row.querySelector("[data-setting-value]").focus();
 }
 
+function openPeriodCreateCard(card) {
+  const toggle = card.querySelector("[data-period-create-toggle]");
+  const form = card.querySelector("[data-period-create-form]");
+  if (!toggle || !form) return;
+  toggle.hidden = true;
+  form.hidden = false;
+  form.querySelector('input[name="name"]')?.focus();
+}
+
+function cancelPeriodCreateCard(card) {
+  const toggle = card.querySelector("[data-period-create-toggle]");
+  const form = card.querySelector("[data-period-create-form]");
+  if (!toggle || !form) return;
+  form.reset();
+  form.hidden = true;
+  toggle.hidden = false;
+  resetSaveState();
+}
+
 function restoreSettingRow(row) {
   if (row.dataset.newRow === "true") {
     row.remove();
     return;
   }
-  const input = row.querySelector("[data-setting-value]");
-  input.value = input.dataset.original || "";
-  input.classList.remove("save-error");
+  settingInputs(row).forEach((input) => {
+    input.value = input.dataset.original || "";
+    input.classList.remove("save-error");
+  });
   row.classList.remove("dirty");
   setSettingActions(row, false);
   resetSaveState();
@@ -723,6 +1139,7 @@ async function createLabelFromPicker(picker) {
   const row = picker.closest("tr");
   if (row?.closest("[data-transaction-table]")) markRowDirty(row);
   else if (row?.closest("[data-monthly-budget-table]")) markBudgetDirty(row);
+  else if (row?.closest("[data-budget-schedule-table]")) row.classList.add("dirty");
   else if (input.dataset.save) await saveCell(input);
 }
 
@@ -790,7 +1207,42 @@ document.addEventListener("keydown", async (event) => {
   const transactionRow = event.target.closest("[data-transaction-table] tr");
   const settingInput = event.target.closest("[data-setting-value]");
   const budgetInput = event.target.closest("[data-budget-field]");
+  const periodInput = event.target.closest("[data-period-start], [data-period-end]");
+  const periodNameInput = event.target.closest("[data-period-name-input]");
+  const periodCreateInput = event.target.closest("[data-period-create-form] input");
+  const budgetScheduleInput = event.target.closest("[data-budget-schedule-field], [data-budget-schedule-new-row] [data-label-input]");
+  const accountBalanceInput = event.target.closest("[data-balance-input]");
 
+  if (event.key === "Escape" && document.querySelector("[data-budget-account-list]:not([hidden])")) {
+    event.preventDefault();
+    closeBudgetAccountLists();
+    return;
+  }
+  if (event.key === "Escape" && accountBalanceInput) {
+    event.preventDefault();
+    cancelAccountBalanceEditor(accountBalanceInput.closest("[data-account-balance-cell]"));
+    return;
+  }
+  if (event.key === "Escape" && budgetScheduleInput) {
+    event.preventDefault();
+    cancelBudgetScheduleRow(budgetScheduleInput.closest("[data-budget-schedule-new-row]"));
+    return;
+  }
+  if (event.key === "Escape" && periodCreateInput) {
+    event.preventDefault();
+    cancelPeriodCreateCard(periodCreateInput.closest("[data-period-create-card]"));
+    return;
+  }
+  if (event.key === "Escape" && periodNameInput) {
+    event.preventDefault();
+    cancelPeriodNameEditor(periodNameInput.closest("[data-period-name]"));
+    return;
+  }
+  if (event.key === "Escape" && periodInput) {
+    event.preventDefault();
+    cancelPeriodRangeEditor(periodInput.closest("[data-period-range]"));
+    return;
+  }
   if (event.key === "Escape" && transactionRow) {
     event.preventDefault();
     restoreRow(transactionRow);
@@ -818,6 +1270,11 @@ document.addEventListener("keydown", async (event) => {
     await saveTransactionRow(transactionRow);
     return;
   }
+  if (event.key === "Enter" && accountBalanceInput) {
+    event.preventDefault();
+    await saveAccountBalanceEditor(accountBalanceInput.closest("[data-account-balance-cell]"));
+    return;
+  }
   if (event.key === "Enter" && settingInput) {
     event.preventDefault();
     await saveSettingRow(settingInput.closest("[data-settings-row]"));
@@ -833,6 +1290,28 @@ document.addEventListener("keydown", async (event) => {
     }
     event.preventDefault();
     await saveBudgetRow(budgetInput.closest("[data-budget-row]"));
+    return;
+  }
+  if (event.key === "Enter" && periodInput) {
+    event.preventDefault();
+    await savePeriodRange(periodInput.closest("[data-period-range]"));
+    return;
+  }
+  if (event.key === "Enter" && periodNameInput) {
+    event.preventDefault();
+    await savePeriodName(periodNameInput.closest("[data-period-name]"));
+    return;
+  }
+  if (event.key === "Enter" && budgetScheduleInput) {
+    const picker = labelInput?.closest("[data-label-picker]");
+    const addButton = picker?.querySelector("[data-create-label]");
+    if (addButton && !addButton.hidden) {
+      event.preventDefault();
+      await createLabelFromPicker(picker);
+      return;
+    }
+    event.preventDefault();
+    await saveBudgetScheduleRow(budgetScheduleInput.closest("[data-budget-schedule-new-row]"));
     return;
   }
   if (event.key === "Enter" && labelInput) {
@@ -868,6 +1347,27 @@ document.addEventListener("change", (event) => {
   }
   const input = event.target.closest("select[data-save]");
   if (input) saveCell(input);
+
+  const importSelect = event.target.closest("[data-import-format], [data-import-date-format]");
+  if (importSelect) {
+    const textarea = document.querySelector("[data-import-textarea]");
+    if (!textarea) return;
+    const formatSelect = document.querySelector("[data-import-format]");
+    const dateFormatSelect = document.querySelector("[data-import-date-format]");
+    const dateExamples = {
+      dmy: "26/03/2026",
+      mdy: "03/26/2026",
+      ymd: "2026-03-26",
+    };
+    const dateExample = dateExamples[dateFormatSelect?.value] || dateExamples.dmy;
+    const placeholders = {
+      csv_header: `Date,Intitulé,Montant,commentaire\n${dateExample},Exemple,-12.50,Note`,
+      csv_no_header: `${dateExample},Exemple,-12.50,Note`,
+      tsv_header: `Date\tIntitulé\tMontant\tcommentaire\n${dateExample}\tExemple\t-12.50\tNote`,
+      tsv_no_header: `${dateExample}\tExemple\t-12.50\tNote`,
+    };
+    textarea.placeholder = placeholders[formatSelect?.value] || "";
+  }
 });
 
 document.addEventListener("input", (event) => {
@@ -887,11 +1387,19 @@ document.addEventListener("input", (event) => {
   if (input) {
     renderLabelSuggestions(input.closest("[data-label-picker]"));
     if (input.closest("[data-transaction-table]")) markRowDirty(input.closest("tr"));
+    if (input.closest("[data-budget-schedule-new-row]")) input.closest("tr").classList.add("dirty");
     return;
   }
+  const budgetScheduleInput = event.target.closest("[data-budget-schedule-field]");
+  if (budgetScheduleInput) budgetScheduleInput.closest("tr")?.classList.add("dirty");
   const transactionCell = event.target.closest('[data-transaction-table] [data-save="transaction"]');
-  if (transactionCell) markRowDirty(transactionCell.closest("tr"));
+  if (transactionCell) {
+    markRowDirty(transactionCell.closest("tr"));
+    updateTransactionRunningBalances(transactionCell.closest("[data-transaction-table]"));
+  }
 });
+
+document.querySelectorAll("[data-transaction-table]").forEach(updateTransactionRunningBalances);
 
 document.addEventListener("mousedown", (event) => {
   if (event.target.closest("[data-label-suggestions]") || event.target.closest("[data-create-label]")) {
@@ -965,6 +1473,89 @@ document.addEventListener("drop", async (event) => {
 });
 
 document.addEventListener("click", async (event) => {
+  if (!event.target.closest("[data-budget-account-list], [data-budget-schedule-confirm]")) {
+    closeBudgetAccountLists();
+  }
+
+  const hideAccountTabButton = event.target.closest("[data-hide-account-tab]");
+  if (hideAccountTabButton) {
+    event.preventDefault();
+    await hideAccountTab(hideAccountTabButton);
+    return;
+  }
+
+  const deletePeriodButton = event.target.closest("[data-delete-period]");
+  if (deletePeriodButton) {
+    await deletePeriod(deletePeriodButton);
+    return;
+  }
+
+  const periodCreateToggle = event.target.closest("[data-period-create-toggle]");
+  if (periodCreateToggle) {
+    openPeriodCreateCard(periodCreateToggle.closest("[data-period-create-card]"));
+    return;
+  }
+
+  const periodCreateCancel = event.target.closest("[data-period-create-cancel]");
+  if (periodCreateCancel) {
+    cancelPeriodCreateCard(periodCreateCancel.closest("[data-period-create-card]"));
+    return;
+  }
+
+  const periodNameDisplay = event.target.closest("[data-period-name-display]");
+  if (periodNameDisplay) {
+    openPeriodNameEditor(periodNameDisplay.closest("[data-period-name]"));
+    return;
+  }
+
+  const confirmPeriodName = event.target.closest("[data-confirm-period-name]");
+  if (confirmPeriodName) {
+    await savePeriodName(confirmPeriodName.closest("[data-period-name]"));
+    return;
+  }
+
+  const cancelPeriodName = event.target.closest("[data-cancel-period-name]");
+  if (cancelPeriodName) {
+    cancelPeriodNameEditor(cancelPeriodName.closest("[data-period-name]"));
+    return;
+  }
+
+  const periodRangeDisplay = event.target.closest("[data-period-range-display]");
+  if (periodRangeDisplay) {
+    openPeriodRangeEditor(periodRangeDisplay.closest("[data-period-range]"));
+    return;
+  }
+
+  const confirmPeriod = event.target.closest("[data-confirm-period]");
+  if (confirmPeriod) {
+    await savePeriodRange(confirmPeriod.closest("[data-period-range]"));
+    return;
+  }
+
+  const cancelPeriod = event.target.closest("[data-cancel-period]");
+  if (cancelPeriod) {
+    cancelPeriodRangeEditor(cancelPeriod.closest("[data-period-range]"));
+    return;
+  }
+
+  const balanceDisplay = event.target.closest("[data-balance-display]");
+  if (balanceDisplay) {
+    openAccountBalanceEditor(balanceDisplay.closest("[data-account-balance-cell]"));
+    return;
+  }
+
+  const confirmAccountBalance = event.target.closest("[data-confirm-account-balance]");
+  if (confirmAccountBalance) {
+    await saveAccountBalanceEditor(confirmAccountBalance.closest("[data-account-balance-cell]"));
+    return;
+  }
+
+  const cancelAccountBalance = event.target.closest("[data-cancel-account-balance]");
+  if (cancelAccountBalance) {
+    cancelAccountBalanceEditor(cancelAccountBalance.closest("[data-account-balance-cell]"));
+    return;
+  }
+
   const tabAddToggle = event.target.closest("[data-tab-add-toggle]");
   if (tabAddToggle) {
     const menu = tabAddToggle.closest(".tab-add-wrapper")?.querySelector("[data-tab-add-menu]");
@@ -1006,6 +1597,7 @@ document.addEventListener("click", async (event) => {
   const addButton = event.target.closest("[data-create-label]");
   if (addButton) {
     await createLabelFromPicker(addButton.closest("[data-label-picker]"));
+    return;
   }
 
   const addRow = event.target.closest("[data-add-row]");
@@ -1086,5 +1678,29 @@ document.addEventListener("click", async (event) => {
   const budgetAccount = event.target.closest("[data-budget-account]");
   if (budgetAccount) {
     await instantiateBudgetSchedule(budgetAccount);
+  }
+
+  const addBudgetSchedule = event.target.closest("[data-add-budget-schedule]");
+  if (addBudgetSchedule) {
+    createBudgetScheduleRow(addBudgetSchedule.closest("[data-budget-schedule-table]"));
+    return;
+  }
+
+  const clearBudgetScheduleButton = event.target.closest("[data-budget-schedule-clear]");
+  if (clearBudgetScheduleButton) {
+    await clearBudgetSchedule(clearBudgetScheduleButton.closest("[data-budget-schedule-table]"));
+    return;
+  }
+
+  const confirmBudgetScheduleRow = event.target.closest("[data-confirm-budget-schedule-row]");
+  if (confirmBudgetScheduleRow) {
+    await saveBudgetScheduleRow(confirmBudgetScheduleRow.closest("[data-budget-schedule-new-row]"));
+    return;
+  }
+
+  const cancelBudgetScheduleRowButton = event.target.closest("[data-cancel-budget-schedule-row]");
+  if (cancelBudgetScheduleRowButton) {
+    cancelBudgetScheduleRow(cancelBudgetScheduleRowButton.closest("[data-budget-schedule-new-row]"));
+    return;
   }
 });

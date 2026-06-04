@@ -4,12 +4,13 @@ import sqlite3
 from datetime import date, datetime
 
 from database import db
+from web_helpers import format_date, format_number, normalize_date
 
 
 def update(path: str, payload: dict[str, object]) -> dict[str, object]:
     try:
         if path == "/api/transaction":
-            update_transaction(payload)
+            return {"ok": True, **update_transaction(payload)}
         elif path == "/api/transaction-row":
             return {"ok": True, **save_transaction_row(payload)}
         elif path == "/api/transaction-delete":
@@ -28,8 +29,16 @@ def update(path: str, payload: dict[str, object]) -> dict[str, object]:
             update_account_summary(payload)
         elif path == "/api/account-visible-if-empty":
             update_account_visible_if_empty(payload)
+        elif path == "/api/period-range":
+            return {"ok": True, **update_period_range(payload)}
+        elif path == "/api/period-name":
+            return {"ok": True, **update_period_name(payload)}
+        elif path == "/api/period-delete":
+            return {"ok": True, **delete_period(payload)}
+        elif path == "/api/period-date":
+            return {"ok": True, **update_period_date(payload)}
         elif path == "/api/account-balance":
-            update_account_balance(payload)
+            return {"ok": True, **update_account_balance(payload)}
         elif path == "/api/account-delete":
             delete_account(payload)
         elif path == "/api/label-row":
@@ -42,6 +51,10 @@ def update(path: str, payload: dict[str, object]) -> dict[str, object]:
             delete_named_row("monthly_budget", payload)
         elif path == "/api/budget-schedule-cancel":
             return {"ok": True, **cancel_budget_schedule(payload)}
+        elif path == "/api/budget-schedule-row":
+            return {"ok": True, **save_budget_schedule_row(payload)}
+        elif path == "/api/budget-schedule-clear":
+            return {"ok": True, **clear_budget_schedule(payload)}
         elif path == "/api/budget-schedule-instantiate":
             return {"ok": True, **instantiate_budget_schedule(payload)}
         elif path == "/api/account":
@@ -59,15 +72,15 @@ def save_transaction_row(payload: dict[str, object]) -> dict[str, object]:
     label = str(payload.get("label") or "").strip()
     if not label:
         raise ValueError("Intitulé obligatoire")
-    amount = float(str(payload.get("amount") or 0).replace(",", "."))
+    amount = parse_amount(payload.get("amount"))
     tx_date = normalize_date(payload.get("date"))
     requested_index = parse_sort_index(payload.get("sort_index"))
     comment = str(payload.get("comment") or "").strip() or None
 
     with db() as conn:
-        month_id = int(payload["month_id"])
+        period_id = int(payload["period_id"])
         account_id = int(payload["account_id"])
-        validate_transaction_date(conn, month_id, tx_date)
+        validate_transaction_date(conn, period_id, tx_date)
         conn.execute("INSERT OR IGNORE INTO transaction_labels(name) VALUES (?)", (label,))
         tx_id = payload.get("id")
         if tx_id:
@@ -75,9 +88,9 @@ def save_transaction_row(payload: dict[str, object]) -> dict[str, object]:
             if old is None:
                 raise ValueError("Transaction introuvable")
             conn.execute("UPDATE transactions SET sort_index = 0 WHERE id = ?", (int(tx_id),))
-            compact_transaction_indexes(conn, int(old["month_id"]), int(old["account_id"]))
-            sort_index = requested_index or next_transaction_index(conn, month_id, account_id)
-            shift_transaction_indexes(conn, month_id, account_id, sort_index)
+            compact_transaction_indexes(conn, int(old["period_id"]), int(old["account_id"]))
+            sort_index = requested_index or next_transaction_index(conn, period_id, account_id)
+            shift_transaction_indexes(conn, period_id, account_id, sort_index)
             conn.execute(
                 """
                 UPDATE transactions
@@ -88,41 +101,68 @@ def save_transaction_row(payload: dict[str, object]) -> dict[str, object]:
             )
             saved_id = int(tx_id)
         else:
-            sort_index = requested_index or next_transaction_index(conn, month_id, account_id)
-            shift_transaction_indexes(conn, month_id, account_id, sort_index)
+            sort_index = requested_index or next_transaction_index(conn, period_id, account_id)
+            shift_transaction_indexes(conn, period_id, account_id, sort_index)
             conn.execute(
                 """
-                INSERT INTO transactions(month_id, account_id, date, label, amount, sort_index, comment)
+                INSERT INTO transactions(period_id, account_id, date, label, amount, sort_index, comment)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (month_id, account_id, tx_date, label, amount, sort_index, comment),
+                (period_id, account_id, tx_date, label, amount, sort_index, comment),
             )
             saved_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        compact_transaction_indexes(conn, month_id, account_id)
+        compact_transaction_indexes(conn, period_id, account_id)
         sort_index = conn.execute("SELECT sort_index FROM transactions WHERE id = ?", (saved_id,)).fetchone()["sort_index"]
-        mark_matching_budget_schedule_found(conn, month_id, label, amount)
-        rows = transaction_indexes(conn, month_id, account_id)
-    return {"id": saved_id, "date": tx_date or "", "sort_index": sort_index, "rows": rows}
+        reconcile_budget_schedule(conn, period_id)
+        rows = transaction_indexes(conn, period_id, account_id)
+    return {
+        "id": saved_id,
+        "date": format_date(tx_date),
+        "date_sort": tx_date or "",
+        "label": label,
+        "amount": format_number(amount),
+        "comment": comment or "",
+        "sort_index": sort_index,
+        "rows": rows,
+    }
 
 
-def mark_matching_budget_schedule_found(conn: sqlite3.Connection, month_id: int, label: str, amount: float) -> None:
+def reconcile_budget_schedule(conn: sqlite3.Connection, period_id: int) -> None:
     conn.execute(
         """
         UPDATE budget_schedule
-        SET status = 'found'
-        WHERE id = (
-            SELECT id
-            FROM budget_schedule
-            WHERE month_id = ?
-              AND status = 'scheduled'
-              AND label = ?
-              AND ABS(amount - ?) < 0.005
-            ORDER BY id
-            LIMIT 1
-        )
+        SET status = 'scheduled'
+        WHERE period_id = ? AND status = 'found'
         """,
-        (month_id, label, amount),
+        (period_id,),
     )
+    transactions = conn.execute(
+        """
+        SELECT label, amount
+        FROM transactions
+        WHERE period_id = ?
+        ORDER BY COALESCE(date, '9999-12-31'), sort_index, id
+        """,
+        (period_id,),
+    ).fetchall()
+    for transaction in transactions:
+        conn.execute(
+            """
+            UPDATE budget_schedule
+            SET status = 'found'
+            WHERE id = (
+                SELECT id
+                FROM budget_schedule
+                WHERE period_id = ?
+                  AND status = 'scheduled'
+                  AND label = ?
+                  AND ABS(amount - ?) < 0.005
+                ORDER BY id
+                LIMIT 1
+            )
+            """,
+            (period_id, transaction["label"], float(transaction["amount"] or 0)),
+        )
 
 
 def parse_sort_index(value: object) -> int | None:
@@ -135,27 +175,17 @@ def parse_sort_index(value: object) -> int | None:
     return parsed
 
 
-def normalize_date(value: object) -> str | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    parts = raw.replace("-", "/").split("/")
-    if len(parts) == 3 and len(parts[0]) == 4:
-        year, month, day = (int(part) for part in parts)
-    elif len(parts) == 3:
-        day, month, year = (int(part) for part in parts)
-    elif len(parts) == 2:
-        day, month = (int(part) for part in parts)
-        year = date.today().year
-    else:
-        raise ValueError("Date invalide")
-    return date(year, month, day).isoformat()
+def parse_amount(value: object) -> float:
+    raw = str(value or "0").strip()
+    raw = raw.replace("\xa0", "").replace(" ", "")
+    raw = raw.replace("EUR", "").replace("eur", "").replace("euro", "")
+    return float(raw.replace(",", ".") or 0)
 
 
-def validate_transaction_date(conn: sqlite3.Connection, month_id: int, tx_date: str | None) -> None:
+def validate_transaction_date(conn: sqlite3.Connection, period_id: int, tx_date: str | None) -> None:
     if tx_date is None:
         raise ValueError("Date obligatoire")
-    period = conn.execute("SELECT start_date, end_date FROM months WHERE id = ?", (month_id,)).fetchone()
+    period = conn.execute("SELECT start_date, end_date FROM period WHERE id = ?", (period_id,)).fetchone()
     if period is None:
         raise ValueError("Période introuvable")
     if not period["start_date"]:
@@ -164,61 +194,142 @@ def validate_transaction_date(conn: sqlite3.Connection, month_id: int, tx_date: 
     parsed_date = datetime.strptime(tx_date, "%Y-%m-%d").date()
     start_date = datetime.strptime(period["start_date"], "%Y-%m-%d").date()
     if parsed_date < start_date:
-        raise ValueError(f"La date doit être >= {period['start_date']}")
+        raise ValueError(f"La date doit être >= {format_date(period['start_date'])}")
     if period["end_date"]:
         end_date = datetime.strptime(period["end_date"], "%Y-%m-%d").date()
-        if parsed_date >= end_date:
-            raise ValueError(f"La date doit être < {period['end_date']}")
+        if parsed_date > end_date:
+            raise ValueError(f"La date doit être <= {format_date(period['end_date'])}")
 
 
-def next_transaction_index(conn: sqlite3.Connection, month_id: int, account_id: int) -> int:
+def update_period_date(payload: dict[str, object]) -> dict[str, object]:
+    period_id = int(payload["id"])
+    field = str(payload.get("field") or "")
+    if field not in {"start_date", "end_date"}:
+        raise ValueError("Champ non autorisé")
+    raw_value = str(payload.get("value") or "").strip()
+    if field == "start_date" and not raw_value:
+        raise ValueError("Date de début obligatoire")
+    value = normalize_period_end(raw_value) if field == "end_date" else normalize_date(raw_value)
+    with db() as conn:
+        row = conn.execute("SELECT id FROM period WHERE id = ?", (period_id,)).fetchone()
+        if row is None:
+            raise ValueError("Période introuvable")
+        conn.execute(
+            f"UPDATE period SET {field} = ? WHERE id = ?",
+            (value, period_id),
+        )
+    return {"value": format_date(value) if value else "en cours"}
+
+
+def update_period_range(payload: dict[str, object]) -> dict[str, object]:
+    period_id = int(payload["id"])
+    start_raw = str(payload.get("start_date") or "").strip()
+    end_raw = str(payload.get("end_date") or "").strip()
+    if not start_raw:
+        raise ValueError("Date de début obligatoire")
+    start_date = normalize_date(start_raw)
+    end_date = normalize_period_end(end_raw)
+    with db() as conn:
+        row = conn.execute("SELECT id FROM period WHERE id = ?", (period_id,)).fetchone()
+        if row is None:
+            raise ValueError("Période introuvable")
+        conn.execute(
+            "UPDATE period SET start_date = ?, end_date = ? WHERE id = ?",
+            (start_date, end_date, period_id),
+        )
+    return {
+        "start_date": format_date(start_date),
+        "end_date": format_date(end_date) if end_date else "en cours",
+    }
+
+
+def normalize_period_end(value: object) -> str | None:
+    raw = str(value or "").strip()
+    if not raw or raw.casefold() == "en cours":
+        return None
+    return normalize_date(raw)
+
+
+def update_period_name(payload: dict[str, object]) -> dict[str, object]:
+    period_id = int(payload["id"])
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("Nom obligatoire")
+    with db() as conn:
+        row = conn.execute("SELECT id FROM period WHERE id = ?", (period_id,)).fetchone()
+        if row is None:
+            raise ValueError("Période introuvable")
+        conn.execute("UPDATE period SET name = ? WHERE id = ?", (name, period_id))
+    return {"name": name}
+
+
+def delete_period(payload: dict[str, object]) -> dict[str, object]:
+    period_id = int(payload["id"])
+    with db() as conn:
+        row = conn.execute("SELECT id FROM period WHERE id = ?", (period_id,)).fetchone()
+        if row is None:
+            raise ValueError("Période introuvable")
+        transaction_count = int(conn.execute("SELECT COUNT(*) FROM transactions WHERE period_id = ?", (period_id,)).fetchone()[0])
+        budget_count = int(conn.execute("SELECT COUNT(*) FROM budget_schedule WHERE period_id = ?", (period_id,)).fetchone()[0])
+        if transaction_count or budget_count:
+            raise ValueError(
+                f"Supprimer {transaction_count} transaction(s) et {budget_count} entrée(s) de budget avant de supprimer cette période."
+            )
+        conn.execute("DELETE FROM period WHERE id = ?", (period_id,))
+    return {"id": period_id}
+
+
+def next_transaction_index(conn: sqlite3.Connection, period_id: int, account_id: int) -> int:
     row = conn.execute(
         """
         SELECT COALESCE(MAX(sort_index), 0) + 1 AS next_index
         FROM transactions
-        WHERE month_id = ? AND account_id = ?
+        WHERE period_id = ? AND account_id = ?
         """,
-        (month_id, account_id),
+        (period_id, account_id),
     ).fetchone()
     return int(row["next_index"])
 
 
-def shift_transaction_indexes(conn: sqlite3.Connection, month_id: int, account_id: int, start_index: int) -> None:
+def shift_transaction_indexes(conn: sqlite3.Connection, period_id: int, account_id: int, start_index: int) -> None:
     conn.execute(
         """
         UPDATE transactions
         SET sort_index = sort_index + 1
-        WHERE month_id = ? AND account_id = ? AND sort_index >= ?
+        WHERE period_id = ? AND account_id = ? AND sort_index >= ?
         """,
-        (month_id, account_id, start_index),
+        (period_id, account_id, start_index),
     )
 
 
-def compact_transaction_indexes(conn: sqlite3.Connection, month_id: int, account_id: int) -> None:
+def compact_transaction_indexes(conn: sqlite3.Connection, period_id: int, account_id: int) -> None:
     rows = conn.execute(
         """
         SELECT id
         FROM transactions
-        WHERE month_id = ? AND account_id = ? AND sort_index > 0
+        WHERE period_id = ? AND account_id = ? AND sort_index > 0
         ORDER BY COALESCE(date, '9999-12-31'), sort_index, id
         """,
-        (month_id, account_id),
+        (period_id, account_id),
     ).fetchall()
     for index, row in enumerate(rows, start=1):
         conn.execute("UPDATE transactions SET sort_index = ? WHERE id = ?", (index, row["id"]))
 
 
-def transaction_indexes(conn: sqlite3.Connection, month_id: int, account_id: int) -> list[dict[str, object]]:
+def transaction_indexes(conn: sqlite3.Connection, period_id: int, account_id: int) -> list[dict[str, object]]:
     rows = conn.execute(
         """
         SELECT id, date, sort_index
         FROM transactions
-        WHERE month_id = ? AND account_id = ?
+        WHERE period_id = ? AND account_id = ?
         ORDER BY COALESCE(date, '9999-12-31'), sort_index, id
         """,
-        (month_id, account_id),
+        (period_id, account_id),
     ).fetchall()
-    return [{"id": row["id"], "date": row["date"] or "", "sort_index": row["sort_index"]} for row in rows]
+    return [
+        {"id": row["id"], "date": format_date(row["date"]), "date_sort": row["date"] or "", "sort_index": row["sort_index"]}
+        for row in rows
+    ]
 
 
 def delete_transaction(payload: dict[str, object]) -> dict[str, object]:
@@ -227,16 +338,18 @@ def delete_transaction(payload: dict[str, object]) -> dict[str, object]:
         if row is None:
             raise ValueError("Transaction introuvable")
         conn.execute("DELETE FROM transactions WHERE id = ?", (int(payload["id"]),))
-        compact_transaction_indexes(conn, int(row["month_id"]), int(row["account_id"]))
-        rows = transaction_indexes(conn, int(row["month_id"]), int(row["account_id"]))
+        compact_transaction_indexes(conn, int(row["period_id"]), int(row["account_id"]))
+        reconcile_budget_schedule(conn, int(row["period_id"]))
+        rows = transaction_indexes(conn, int(row["period_id"]), int(row["account_id"]))
     return {"rows": rows}
 
 
 def clear_transactions(payload: dict[str, object]) -> dict[str, object]:
     with db() as conn:
-        month_id = int(payload["month_id"])
+        period_id = int(payload["period_id"])
         account_id = int(payload["account_id"])
-        conn.execute("DELETE FROM transactions WHERE month_id = ? AND account_id = ?", (month_id, account_id))
+        conn.execute("DELETE FROM transactions WHERE period_id = ? AND account_id = ?", (period_id, account_id))
+        reconcile_budget_schedule(conn, period_id)
     return {"rows": []}
 
 
@@ -251,25 +364,25 @@ def reorder_transaction(payload: dict[str, object]) -> dict[str, object]:
         target = conn.execute("SELECT * FROM transactions WHERE id = ?", (target_id,)).fetchone()
         if moved is None or target is None:
             raise ValueError("Transaction introuvable")
-        if moved["month_id"] != target["month_id"] or moved["account_id"] != target["account_id"]:
+        if moved["period_id"] != target["period_id"] or moved["account_id"] != target["account_id"]:
             raise ValueError("Déplacement invalide")
 
-        month_id = int(moved["month_id"])
+        period_id = int(moved["period_id"])
         account_id = int(moved["account_id"])
         conn.execute("UPDATE transactions SET sort_index = 0 WHERE id = ?", (tx_id,))
-        compact_transaction_indexes(conn, month_id, account_id)
+        compact_transaction_indexes(conn, period_id, account_id)
         target = conn.execute("SELECT * FROM transactions WHERE id = ?", (target_id,)).fetchone()
         new_date = target["date"]
-        validate_transaction_date(conn, month_id, new_date)
+        validate_transaction_date(conn, period_id, new_date)
         new_index = int(target["sort_index"]) + (1 if position == "after" else 0)
-        shift_transaction_indexes(conn, month_id, account_id, new_index)
+        shift_transaction_indexes(conn, period_id, account_id, new_index)
         conn.execute(
             "UPDATE transactions SET date = ?, sort_index = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (new_date, new_index, tx_id),
         )
-        compact_transaction_indexes(conn, month_id, account_id)
+        compact_transaction_indexes(conn, period_id, account_id)
         new_index = conn.execute("SELECT sort_index FROM transactions WHERE id = ?", (tx_id,)).fetchone()["sort_index"]
-        rows = transaction_indexes(conn, month_id, account_id)
+        rows = transaction_indexes(conn, period_id, account_id)
     return {"date": new_date or "", "sort_index": new_index, "rows": rows}
 
 
@@ -294,7 +407,7 @@ def save_monthly_budget_row(payload: dict[str, object]) -> dict[str, object]:
     label = str(payload.get("label") or "").strip()
     if not label:
         raise ValueError("Intitulé obligatoire")
-    amount = float(str(payload.get("amount") or 0).replace(",", "."))
+    amount = parse_amount(payload.get("amount"))
     row_id = payload.get("id")
     with db() as conn:
         if row_id:
@@ -309,7 +422,7 @@ def save_monthly_budget_row(payload: dict[str, object]) -> dict[str, object]:
                 (day, label, amount),
             )
             saved_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    return {"id": saved_id, "day": day, "label": label, "amount": amount}
+    return {"id": saved_id, "day": day, "label": label, "amount": format_number(amount)}
 
 
 def cancel_budget_schedule(payload: dict[str, object]) -> dict[str, object]:
@@ -320,6 +433,32 @@ def cancel_budget_schedule(payload: dict[str, object]) -> dict[str, object]:
             raise ValueError("Entrée budget introuvable")
         conn.execute("UPDATE budget_schedule SET status = 'cancel' WHERE id = ?", (schedule_id,))
     return {"id": schedule_id, "status": "cancel", "status_label": "Annulé"}
+
+
+def save_budget_schedule_row(payload: dict[str, object]) -> dict[str, object]:
+    period_id = int(payload["period_id"])
+    label = str(payload.get("label") or "").strip()
+    if not label:
+        raise ValueError("Intitulé obligatoire")
+    amount = parse_amount(payload.get("amount"))
+    with db() as conn:
+        period = conn.execute("SELECT id FROM period WHERE id = ?", (period_id,)).fetchone()
+        if period is None:
+            raise ValueError("Période introuvable")
+        conn.execute("INSERT OR IGNORE INTO transaction_labels(name) VALUES (?)", (label,))
+        conn.execute(
+            "INSERT INTO budget_schedule(period_id, label, amount, status) VALUES (?, ?, ?, 'scheduled')",
+            (period_id, label, amount),
+        )
+        schedule_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    return {"id": schedule_id, "label": label, "amount": format_number(amount)}
+
+
+def clear_budget_schedule(payload: dict[str, object]) -> dict[str, object]:
+    period_id = int(payload["period_id"])
+    with db() as conn:
+        conn.execute("DELETE FROM budget_schedule WHERE period_id = ?", (period_id,))
+    return {"rows": []}
 
 
 def instantiate_budget_schedule(payload: dict[str, object]) -> dict[str, object]:
@@ -337,32 +476,36 @@ def instantiate_budget_schedule(payload: dict[str, object]) -> dict[str, object]
             raise ValueError("Compte introuvable")
         label = str(scheduled["label"])
         amount = float(scheduled["amount"] or 0)
-        month_id = int(scheduled["month_id"])
+        period_id = int(scheduled["period_id"])
         conn.execute("INSERT OR IGNORE INTO transaction_labels(name) VALUES (?)", (label,))
-        sort_index = next_transaction_index(conn, month_id, account_id)
-        shift_transaction_indexes(conn, month_id, account_id, sort_index)
+        sort_index = next_transaction_index(conn, period_id, account_id)
+        shift_transaction_indexes(conn, period_id, account_id, sort_index)
         conn.execute(
             """
-            INSERT INTO transactions(month_id, account_id, date, label, amount, sort_index, comment)
+            INSERT INTO transactions(period_id, account_id, date, label, amount, sort_index, comment)
             VALUES (?, ?, ?, ?, ?, ?, NULL)
             """,
-            (month_id, account_id, tx_date, label, amount, sort_index),
+            (period_id, account_id, tx_date, label, amount, sort_index),
         )
         tx_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        compact_transaction_indexes(conn, month_id, account_id)
+        compact_transaction_indexes(conn, period_id, account_id)
+        reconcile_budget_schedule(conn, period_id)
         sort_index = conn.execute("SELECT sort_index FROM transactions WHERE id = ?", (tx_id,)).fetchone()["sort_index"]
     return {
         "id": tx_id,
         "account_id": account_id,
         "account_name": account["name"],
-        "date": tx_date,
+        "date": format_date(tx_date),
+        "date_sort": tx_date,
         "label": label,
         "amount": amount,
         "sort_index": sort_index,
+        "status": "found",
+        "status_label": "Trouvé",
     }
 
 
-def update_transaction(payload: dict[str, object]) -> None:
+def update_transaction(payload: dict[str, object]) -> dict[str, object]:
     tx_id = int(payload["id"])
     field = str(payload["field"])
     value = payload.get("value")
@@ -370,7 +513,7 @@ def update_transaction(payload: dict[str, object]) -> None:
     if field not in allowed:
         raise ValueError("Champ non autorisé")
     if field == "amount":
-        value = float(str(value).replace(",", ".") or 0)
+        value = parse_amount(value)
     if field == "date":
         value = normalize_date(value)
     if field == "label":
@@ -378,11 +521,18 @@ def update_transaction(payload: dict[str, object]) -> None:
         if not value:
             raise ValueError("Intitulé obligatoire")
     with db() as conn:
+        month_ids: set[int] = set()
         if field == "date":
-            row = conn.execute("SELECT month_id FROM transactions WHERE id = ?", (tx_id,)).fetchone()
+            row = conn.execute("SELECT period_id FROM transactions WHERE id = ?", (tx_id,)).fetchone()
             if row is None:
                 raise ValueError("Transaction introuvable")
-            validate_transaction_date(conn, int(row["month_id"]), value)
+            month_ids.add(int(row["period_id"]))
+            validate_transaction_date(conn, int(row["period_id"]), value)
+        if field in {"label", "amount"}:
+            row = conn.execute("SELECT period_id FROM transactions WHERE id = ?", (tx_id,)).fetchone()
+            if row is None:
+                raise ValueError("Transaction introuvable")
+            month_ids.add(int(row["period_id"]))
         if field == "label":
             conn.execute("INSERT OR IGNORE INTO transaction_labels(name) VALUES (?)", (value,))
             conn.execute(
@@ -391,6 +541,13 @@ def update_transaction(payload: dict[str, object]) -> None:
             )
         else:
             conn.execute(f"UPDATE transactions SET {field} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (value, tx_id))
+        for period_id in month_ids:
+            reconcile_budget_schedule(conn, period_id)
+    if field == "amount":
+        return {"value": format_number(value)}
+    if field == "date":
+        return {"value": format_date(value), "date_sort": value or ""}
+    return {"value": value or ""}
 
 
 def save_named_row(table: str, payload: dict[str, object]) -> dict[str, object]:
@@ -468,20 +625,34 @@ def update_account_visible_if_empty(payload: dict[str, object]) -> None:
         )
 
 
-def update_account_balance(payload: dict[str, object]) -> None:
+def update_account_balance(payload: dict[str, object]) -> dict[str, object]:
     field = str(payload.get("field") or "")
     if field != "opening":
         raise ValueError("Champ non autorisé")
-    value = float(str(payload.get("value") or 0).replace(",", "."))
+    raw_value = str(payload.get("value") or "").strip()
+    value = None if raw_value == "" else parse_amount(raw_value)
+    period_id = int(payload["period_id"])
+    account_id = int(payload["account_id"])
     with db() as conn:
         conn.execute(
             """
-            UPDATE account_balances
-            SET opening = ?
-            WHERE month_id = ? AND account_id = ?
+            INSERT INTO account_balances(period_id, account_id, opening)
+            VALUES (?, ?, ?)
+            ON CONFLICT(period_id, account_id) DO UPDATE SET opening = excluded.opening
             """,
-            (value, int(payload["month_id"]), int(payload["account_id"])),
+            (period_id, account_id, value),
         )
+        transaction_total = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE period_id = ? AND account_id = ?",
+            (period_id, account_id),
+        ).fetchone()[0]
+    current = None if value is None else value + float(transaction_total or 0)
+    return {
+        "value": "" if value is None else format_number(value),
+        "display": "non défini" if value is None else format_number(value),
+        "current": "" if current is None else format_number(current),
+        "current_display": "non défini" if current is None else format_number(current),
+    }
 
 
 def save_label_row(payload: dict[str, object]) -> dict[str, object]:

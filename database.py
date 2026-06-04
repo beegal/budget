@@ -5,26 +5,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from config import MONTH_NAMES, parse_simple_yaml
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "budget.sqlite3"
 INITIAL_DATA_PATH = ROOT / "initial-data.yaml"
-MONTH_NAMES = [
-    "Janvier",
-    "Février",
-    "Mars",
-    "Avril",
-    "Mai",
-    "Juin",
-    "Juillet",
-    "Août",
-    "Septembre",
-    "Octobre",
-    "Novembre",
-    "Décembre",
-]
-
-
 def db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -37,10 +22,9 @@ def db() -> sqlite3.Connection:
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS months (
+        CREATE TABLE IF NOT EXISTS period (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
-            period TEXT,
             start_date TEXT,
             end_date TEXT
         );
@@ -60,7 +44,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            month_id INTEGER NOT NULL REFERENCES months(id) ON DELETE CASCADE,
+            period_id INTEGER NOT NULL REFERENCES period(id) ON DELETE CASCADE,
             account_id INTEGER NOT NULL REFERENCES accounts(id),
             date TEXT,
             label TEXT NOT NULL,
@@ -73,13 +57,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS account_balances (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            month_id INTEGER NOT NULL REFERENCES months(id) ON DELETE CASCADE,
+            period_id INTEGER NOT NULL REFERENCES period(id) ON DELETE CASCADE,
             account_id INTEGER NOT NULL REFERENCES accounts(id),
             opening REAL,
-            current REAL,
-            closing REAL,
-            difference REAL,
-            UNIQUE(month_id, account_id)
+            UNIQUE(period_id, account_id)
         );
 
         CREATE TABLE IF NOT EXISTS monthly_budget (
@@ -91,17 +72,17 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS budget_schedule (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            month_id INTEGER NOT NULL REFERENCES months(id) ON DELETE CASCADE,
+            period_id INTEGER NOT NULL REFERENCES period(id) ON DELETE CASCADE,
             label TEXT NOT NULL,
             amount REAL NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled', 'found', 'cancel'))
         );
 
-        CREATE INDEX IF NOT EXISTS idx_transactions_month ON transactions(month_id);
+        CREATE INDEX IF NOT EXISTS idx_transactions_period ON transactions(period_id);
         CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
         CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
-        CREATE INDEX IF NOT EXISTS idx_budget_schedule_month ON budget_schedule(month_id);
-        CREATE INDEX IF NOT EXISTS idx_budget_schedule_match ON budget_schedule(month_id, label, amount, status);
+        CREATE INDEX IF NOT EXISTS idx_budget_schedule_period ON budget_schedule(period_id);
+        CREATE INDEX IF NOT EXISTS idx_budget_schedule_match ON budget_schedule(period_id, label, amount, status);
         """
     )
     conn.execute(
@@ -115,21 +96,20 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
 
 def seed_empty_database(conn: sqlite3.Connection) -> None:
-    has_months = conn.execute("SELECT EXISTS(SELECT 1 FROM months)").fetchone()[0]
+    has_periods = conn.execute("SELECT EXISTS(SELECT 1 FROM period)").fetchone()[0]
     has_accounts = conn.execute("SELECT EXISTS(SELECT 1 FROM accounts)").fetchone()[0]
-    if has_months or has_accounts:
+    if has_periods or has_accounts:
         return
 
     initial_data = load_initial_data()
     today = date.today()
     start_date = today.replace(day=1)
-    month_name = f"{MONTH_NAMES[today.month - 1]} {today.year}"
-    period = f"{start_date.isoformat()} -> en cours"
+    default_period_name = f"{MONTH_NAMES[today.month - 1]} {today.year}"
     conn.execute(
-        "INSERT INTO months(name, period, start_date, end_date) VALUES (?, ?, ?, NULL)",
-        (month_name, period, start_date.isoformat()),
+        "INSERT INTO period(name, start_date, end_date) VALUES (?, ?, NULL)",
+        (default_period_name, start_date.isoformat()),
     )
-    month_id = conn.execute("SELECT id FROM months WHERE name = ?", (month_name,)).fetchone()["id"]
+    period_id = conn.execute("SELECT id FROM period WHERE name = ?", (default_period_name,)).fetchone()["id"]
 
     for index, account in enumerate(initial_accounts(initial_data), start=1):
         account_name = account["name"]
@@ -141,10 +121,10 @@ def seed_empty_database(conn: sqlite3.Connection) -> None:
         account_id = conn.execute("SELECT id FROM accounts WHERE name = ?", (account_name,)).fetchone()["id"]
         conn.execute(
             """
-            INSERT INTO account_balances(month_id, account_id, opening, current, closing, difference)
-            VALUES (?, ?, 0, 0, 0, 0)
+            INSERT INTO account_balances(period_id, account_id, opening)
+            VALUES (?, ?, NULL)
             """,
-            (month_id, account_id),
+            (period_id, account_id),
         )
 
     for label in initial_labels(initial_data):
@@ -195,58 +175,3 @@ def initial_accounts(initial_data: dict[str, Any]) -> list[dict[str, Any]]:
 def initial_labels(initial_data: dict[str, Any]) -> list[str]:
     labels = initial_data.get("labels") or default_initial_data()["labels"]
     return [str(label).strip() for label in labels if str(label).strip()]
-
-
-def parse_simple_yaml(text: str) -> dict[str, Any]:
-    data: dict[str, Any] = {}
-    current_section: str | None = None
-    current_item: dict[str, Any] | None = None
-    for raw_line in text.splitlines():
-        line = raw_line.split("#", 1)[0].rstrip()
-        if not line.strip():
-            continue
-        if not line.startswith(" ") and line.endswith(":"):
-            current_section = line[:-1].strip()
-            data[current_section] = []
-            current_item = None
-            continue
-        if current_section is None:
-            continue
-        stripped = line.strip()
-        if stripped.startswith("- "):
-            item = stripped[2:].strip()
-            if ":" in item:
-                key, value = split_yaml_pair(item)
-                current_item = {key: parse_yaml_scalar(value)}
-                data[current_section].append(current_item)
-            else:
-                current_item = None
-                data[current_section].append(parse_yaml_scalar(item))
-            continue
-        if current_item is not None and ":" in stripped:
-            key, value = split_yaml_pair(stripped)
-            current_item[key] = parse_yaml_scalar(value)
-    return data
-
-
-def split_yaml_pair(value: str) -> tuple[str, str]:
-    key, raw_value = value.split(":", 1)
-    return key.strip(), raw_value.strip()
-
-
-def parse_yaml_scalar(value: str) -> Any:
-    value = value.strip()
-    if value in {"true", "True"}:
-        return True
-    if value in {"false", "False"}:
-        return False
-    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-        return value[1:-1]
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    try:
-        return float(value)
-    except ValueError:
-        return value

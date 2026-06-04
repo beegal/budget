@@ -33,7 +33,7 @@ initial-data.yaml
 
 Tables actives:
 
-- `months`
+- `period`
 - `accounts`
 - `transaction_labels`
 - `transactions`
@@ -57,6 +57,20 @@ Puis ouvrir:
 ```text
 http://127.0.0.1:8000
 ```
+
+## Configuration
+
+Le fichier `config.yaml` contient les préférences d'affichage:
+
+```yaml
+i18n:
+  default-locale: fr_FR.UTF-8
+  date-format: jj/mm/yy
+display:
+  number-decimals: 2
+```
+
+`date-format` accepte `jj/mm/yy`, `mm/jj/yy` ou `yy-mm-jj`. Ce format sert notamment de valeur par défaut dans l'import CSV.
 
 ## Pages principales
 
@@ -100,6 +114,13 @@ Format attendu:
 ```text
 Date,Intitulé,Montant,commentaire
 ```
+
+L'écran permet de choisir:
+
+- le format de date: `jj/mm/yy`, `mm/jj/yy` ou `yy-mm-jj`;
+- le format de fichier: CSV/TSV, avec ou sans en-tête.
+
+Les années sur deux ou quatre chiffres sont acceptées. Le format de date sélectionné par défaut vient de `i18n.date-format` dans `config.yaml`.
 
 Validation:
 
@@ -187,3 +208,21 @@ Secrets requis:
 
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
+
+## Import Personnal-Budget
+
+Un utilitaire CLI permet de recréer la base et d'importer le classeur `Personnal-Budget`:
+
+```bash
+python3 budget_cli.py --create --import Personnal-Budget.xls
+```
+
+Par défaut, la base utilisée est `data/budget.sqlite3`. Pour tester dans une autre base:
+
+```bash
+python3 budget_cli.py --db /tmp/budget-test.sqlite3 --create --import Personnal-Budget.xlsx
+```
+
+Le flag `--create` recrée une base vide. L'import accepte directement `.xlsx`; si `Personnal-Budget.xls` est demandé mais que `Personnal-Budget.xlsx` existe, le fichier `.xlsx` est utilisé.
+
+Les dates de début/fin sont inférées depuis le texte de période visible dans le classeur. Les transactions sont importées même si leur date tombe hors de cette plage; le CLI affiche ces incohérences en `Incohérence importée` sans les filtrer, puis logge séparément les lignes réellement non importables.
