@@ -146,6 +146,16 @@ Validation:
 ```text
 .
 ├── app.py
+├── budget_cli.py
+├── config.py
+├── config.yaml
+├── components/
+│   ├── common.py
+│   ├── imports.py
+│   ├── parameters.py
+│   ├── period.py
+│   ├── periods.py
+│   └── transactions.py
 ├── database.py
 ├── initial-data.yaml
 ├── README.md
@@ -167,10 +177,19 @@ Validation:
 │   ├── periods.py
 │   ├── static_files.py
 │   └── transactions.py
-└── static/
+├── static/
     ├── app.js
     └── style.css
+└── templates/
+    ├── imports.html
+    ├── layout.html
+    ├── parameters.html
+    ├── period.html
+    ├── periods.html
+    └── transactions.html
 ```
+
+Les endpoints préparent les données et délèguent le rendu HTML réutilisable au répertoire `components/`. Les templates dans `templates/` gardent les squelettes de pages, tandis que `components/` contient les composants dynamiques comme tabs, lignes de tables, boutons d'action, icônes et sélecteurs d'intitulés.
 
 ## Docker
 

@@ -6,6 +6,8 @@ from datetime import date
 from io import StringIO
 from urllib.parse import parse_qs
 
+from components.common import panel_message
+from components.imports import import_button, render_validation
 from config import DATE_FORMAT
 from database import db
 from endpoints import api
@@ -26,7 +28,7 @@ def page(period_id: int, query: str) -> bytes:
         period = conn.execute("SELECT * FROM period WHERE id = ?", (period_id,)).fetchone()
         account = conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone() if account_id else None
     if period is None or account is None:
-        return layout("Import introuvable", "<section class='panel'><h1>Import introuvable</h1></section>")
+        return layout("Import introuvable", panel_message("Import introuvable"))
     return page_html(period, account, "", default_date_format(), "csv_header")
 
 
@@ -40,12 +42,6 @@ def page_html(
 ) -> bytes:
     period_id = period["id"]
     validation_html = render_validation(validation) if validation else ""
-    import_disabled = " disabled" if not validation or validation["problem_count"] else ""
-    import_button = (
-        f'<button name="action" value="import"{import_disabled}>Importation</button>'
-        if validation
-        else ""
-    )
     body = render_template(
         "imports.html",
         period_label=esc(period_label(period)),
@@ -63,7 +59,7 @@ def page_html(
         format_csv_no_header_selected="selected" if format_value == "csv_no_header" else "",
         format_tsv_header_selected="selected" if format_value == "tsv_header" else "",
         format_tsv_no_header_selected="selected" if format_value == "tsv_no_header" else "",
-        import_button=import_button,
+        import_button=import_button(validation),
         validation_html=validation_html,
     )
     return layout("Import CSV", body)
@@ -200,30 +196,3 @@ def validate_csv(period_id: int, raw_csv: str, date_format: str = "dmy", format_
         "existing_label_count": existing_count,
         "create_label_count": len(labels_to_create),
     }
-
-
-def render_validation(validation: dict[str, object]) -> str:
-    row_html = "".join(
-        f"""<tr class="{"import-row-error" if row["errors"] else ""}">
-  <td>{row["line"]}</td>
-  <td>{esc(row["date"])}</td>
-  <td>{esc(row["label"])}</td>
-  <td>{esc(row["amount"])}</td>
-  <td>{esc(row["comment"])}</td>
-  <td>{esc("; ".join(row["errors"]))}</td>
-</tr>"""
-        for row in validation["rows"]
-    )
-    return f"""<div class="import-validation">
-  <h2>Fichier à importer</h2>
-  <table>
-    <thead><tr><th>#</th><th>Date</th><th>Intitulé</th><th>Montant</th><th>Commentaire</th><th>Erreur</th></tr></thead>
-    <tbody>{row_html or "<tr><td colspan='6'>Aucune ligne à valider.</td></tr>"}</tbody>
-  </table>
-  <div class="import-result">
-    <div><span>Records corrects</span><strong>{validation["correct_count"]}</strong></div>
-    <div><span>Records problématiques</span><strong class="{"negative" if validation["problem_count"] else "positive"}">{validation["problem_count"]}</strong></div>
-    <div><span>Intitulés existants</span><strong>{validation["existing_label_count"]}</strong></div>
-    <div><span>Intitulés à créer</span><strong>{validation["create_label_count"]}</strong></div>
-  </div>
-</div>"""

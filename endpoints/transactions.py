@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from urllib.parse import parse_qs
 
+from components.common import row_options
+from components.transactions import transaction_rows
 from database import db
-from web_helpers import esc, format_date, layout, money, one, render_template, row_options
+from web_helpers import esc, layout, one, render_template
 
 
 def page(query: str) -> bytes:
@@ -38,22 +40,12 @@ def page(query: str) -> bytes:
             """,
             values,
         ).fetchall()
-    row_html = "".join(
-        f"""<tr>
-  <td>{esc(format_date(row["date"]))}</td>
-  <td>{esc(row["period_name"])}</td>
-  <td>{esc(row["account_name"])}</td>
-  <td>{esc(row["label"])}</td>
-  <td class="num {'negative' if row["amount"] < 0 else 'positive'}">{money(row["amount"])}</td>
-</tr>"""
-        for row in rows
-    )
     body = render_template(
         "transactions.html",
         period_options=row_options(periods, period_id, "Toutes les périodes"),
         account_options=row_options(accounts, account, "Tous les comptes"),
         search=esc(search),
-        row_html=row_html,
+        row_html=transaction_rows(rows),
     )
     return layout("Transactions", body)
 
