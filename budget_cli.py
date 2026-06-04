@@ -87,13 +87,13 @@ def main() -> int:
         workbook_path = resolve_workbook_path(Path(args.import_path).expanduser())
         summary = import_workbook(db_path, workbook_path)
         print(f"Import terminé: {workbook_path}")
+        print(f"Feuilles ignorées: {', '.join(summary['ignored_sheets']) or '-'}")
         print(f"Périodes: {summary['periods']}")
         print(f"Comptes: {summary['accounts']}")
         print(f"Transactions: {summary['transactions']}")
         print(f"Transactions hors période importées: {summary['out_of_range_transactions']}")
         print(f"Lignes non importées: {summary['skipped_transactions']}")
         print(f"Intitulés: {summary['labels']}")
-        print(f"Budget mensuel: {summary['monthly_budget']}")
         for inconsistency in summary["inconsistencies"]:
             print(
                 f"Incohérence importée - feuille {inconsistency.sheet_name}, ligne {inconsistency.row_number}, "
@@ -120,24 +120,7 @@ def create_database(db_path: Path) -> None:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         database.ensure_schema(conn)
-        clear_database(conn)
-
-
-def clear_database(conn: sqlite3.Connection) -> None:
-    conn.execute("PRAGMA foreign_keys = OFF")
-    for table in (
-        "transactions",
-        "budget_schedule",
-        "monthly_budget",
-        "account_balances",
-        "transaction_labels",
-        "accounts",
-        "period",
-    ):
-        conn.execute(f"DELETE FROM {table}")
-    conn.execute("DELETE FROM sqlite_sequence")
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.commit()
+        database.clear_all_data(conn)
 
 
 def resolve_workbook_path(path: Path) -> Path:
@@ -155,14 +138,13 @@ def import_workbook(db_path: Path, workbook_path: Path) -> dict[str, object]:
         raise ValueError("Le format .xls binaire n'est pas supporté sans xlrd. Sauve le fichier en .xlsx.")
     sheets = read_xlsx(workbook_path)
     periods = build_periods(sheets)
-    budget_rows = monthly_budget_rows(sheets)
+    ignored_sheets = [sheet.name for sheet in sheets if sheet.name.lower() in PERIOD_SHEET_SKIP]
 
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         account_ids: dict[str, int] = {}
         label_names: set[str] = set()
-        monthly_count = import_monthly_budget(conn, budget_rows)
         transaction_count = 0
         inconsistencies: list[ImportInconsistency] = []
         problems = [problem for period in periods for problem in period.problems]
@@ -220,7 +202,7 @@ def import_workbook(db_path: Path, workbook_path: Path) -> dict[str, object]:
             "skipped_transactions": len(problems),
             "problems": problems,
             "labels": int(conn.execute("SELECT COUNT(*) FROM transaction_labels").fetchone()[0]),
-            "monthly_budget": monthly_count,
+            "ignored_sheets": ignored_sheets,
         }
 
 
@@ -411,32 +393,6 @@ def parse_transactions(sheet: WorkbookSheet, problems: list[ImportProblem] | Non
                 )
             )
     return transactions
-
-
-def monthly_budget_rows(sheets: list[WorkbookSheet]) -> list[tuple[int, str, float]]:
-    budget = next((sheet for sheet in sheets if sheet.name.lower() == "budget"), None)
-    if budget is None:
-        return []
-    rows = []
-    for row_number in sorted(budget.rows):
-        row = budget.rows[row_number]
-        income_label = row.get(1, "").strip()
-        income_amount = row.get(5, "").strip()
-        expense_label = row.get(6, "").strip()
-        expense_amount = row.get(10, "").strip()
-        if income_label and income_label.lower() != "total" and income_amount:
-            rows.append((1, income_label, abs(parse_float(income_amount))))
-        if expense_label and expense_label.lower() != "total" and expense_amount:
-            rows.append((1, expense_label, -abs(parse_float(expense_amount))))
-    return rows
-
-
-def import_monthly_budget(conn: sqlite3.Connection, rows: list[tuple[int, str, float]]) -> int:
-    conn.execute("DELETE FROM monthly_budget")
-    for day, label, amount in rows:
-        conn.execute("INSERT INTO monthly_budget(day, label, amount) VALUES (?, ?, ?)", (day, label, amount))
-        conn.execute("INSERT OR IGNORE INTO transaction_labels(name) VALUES (?)", (label,))
-    return len(rows)
 
 
 def insert_period(conn: sqlite3.Connection, period: PeriodImport) -> int:

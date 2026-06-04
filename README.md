@@ -245,3 +245,5 @@ python3 budget_cli.py --db /tmp/budget-test.sqlite3 --create --import Personnal-
 Le flag `--create` recrée une base vide. L'import accepte directement `.xlsx`; si `Personnal-Budget.xls` est demandé mais que `Personnal-Budget.xlsx` existe, le fichier `.xlsx` est utilisé.
 
 Les dates de début/fin sont inférées depuis le texte de période visible dans le classeur. Les transactions sont importées même si leur date tombe hors de cette plage; le CLI affiche ces incohérences en `Incohérence importée` sans les filtrer, puis logge séparément les lignes réellement non importables.
+
+La feuille Excel `Budget` est ignorée par le CLI.

@@ -95,6 +95,23 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def clear_all_data(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA foreign_keys = OFF")
+    for table in (
+        "transactions",
+        "budget_schedule",
+        "monthly_budget",
+        "account_balances",
+        "transaction_labels",
+        "accounts",
+        "period",
+    ):
+        conn.execute(f"DELETE FROM {table}")
+    conn.execute("DELETE FROM sqlite_sequence")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.commit()
+
+
 def seed_empty_database(conn: sqlite3.Connection) -> None:
     has_periods = conn.execute("SELECT EXISTS(SELECT 1 FROM period)").fetchone()[0]
     has_accounts = conn.execute("SELECT EXISTS(SELECT 1 FROM accounts)").fetchone()[0]
