@@ -11,7 +11,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from config import DATE_ORDER, MONTH_LOOKUP, NUMBER_DECIMALS, strip_accents
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-JINJA_TEMPLATES = {"layout.html", "parameters.html", "transactions.html"}
+JINJA_TEMPLATES = {"layout.html", "parameters.html", "transactions.html", "imports.html"}
 JINJA_ENV = Environment(
     loader=FileSystemLoader(TEMPLATES_DIR),
     autoescape=select_autoescape(("html",)),

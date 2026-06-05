@@ -1,44 +1,73 @@
 <section class="page-title">
   <div>
-    <p class="eyebrow">${period_label}</p>
+    <p class="eyebrow">{{ period_label }}</p>
     <h1>Import CSV</h1>
   </div>
-  <a class="button ghost" href="/period/${period_id}?account=${account_id}">Retour au compte</a>
+  <a class="button ghost" href="/period/{{ period_id }}?account={{ account_id }}">Retour au compte</a>
 </section>
 <section class="panel narrow">
   <dl class="import-context">
-    <div><dt>Compte</dt><dd>${account_name}</dd></div>
-    <div><dt>Période</dt><dd>${period_name}</dd></div>
-    <div><dt>Dates valides</dt><dd>${period_start_date} &lt;= date${period_end_date_clause}</dd></div>
+    <div><dt>Compte</dt><dd>{{ account_name }}</dd></div>
+    <div><dt>Période</dt><dd>{{ period_name }}</dd></div>
+    <div><dt>Dates valides</dt><dd>{{ period_start_date }} &lt;= date{% if period_end_date %} &lt;= {{ period_end_date }}{% endif %}</dd></div>
   </dl>
-  <form method="post" action="/period/${period_id}/import" class="import-form">
-    <input type="hidden" name="account_id" value="${account_id}">
+  <form method="post" action="/period/{{ period_id }}/import" class="import-form">
+    <input type="hidden" name="account_id" value="{{ account_id }}">
     <div class="form-row">
       <label>Format de date
         <select name="date_format" data-import-date-format>
-          <option value="dmy" ${date_format_dmy_selected}>jj/mm/yy</option>
-          <option value="mdy" ${date_format_mdy_selected}>mm/jj/yy</option>
-          <option value="ymd" ${date_format_ymd_selected}>yy-mm-jj</option>
+          <option value="dmy"{% if date_format == "dmy" %} selected{% endif %}>jj/mm/yy</option>
+          <option value="mdy"{% if date_format == "mdy" %} selected{% endif %}>mm/jj/yy</option>
+          <option value="ymd"{% if date_format == "ymd" %} selected{% endif %}>yy-mm-jj</option>
         </select>
       </label>
     </div>
     <div class="form-row">
       <label>Format
         <select name="format" data-import-format>
-          <option value="csv_header" ${format_csv_header_selected}>CSV avec en-tête</option>
-          <option value="csv_no_header" ${format_csv_no_header_selected}>CSV sans en-tête</option>
-          <option value="tsv_header" ${format_tsv_header_selected}>TSV avec en-tête</option>
-          <option value="tsv_no_header" ${format_tsv_no_header_selected}>TSV sans en-tête</option>
+          <option value="csv_header"{% if format_value == "csv_header" %} selected{% endif %}>CSV avec en-tête</option>
+          <option value="csv_no_header"{% if format_value == "csv_no_header" %} selected{% endif %}>CSV sans en-tête</option>
+          <option value="tsv_header"{% if format_value == "tsv_header" %} selected{% endif %}>TSV avec en-tête</option>
+          <option value="tsv_no_header"{% if format_value == "tsv_no_header" %} selected{% endif %}>TSV sans en-tête</option>
         </select>
       </label>
     </div>
     <label>Données à importer
-      <textarea name="csv_import" rows="12" data-import-textarea placeholder="Date,Intitulé,Montant,commentaire&#10;26/03/2026,Course - Exemple,-12.50,Note">${raw_csv}</textarea>
+      <textarea name="csv_import" rows="12" data-import-textarea placeholder="Date,Intitulé,Montant,commentaire&#10;26/03/2026,Course - Exemple,-12.50,Note">{{ raw_csv }}</textarea>
     </label>
     <div class="form-actions">
       <button name="action" value="validate">Validation</button>
-      ${import_button}
+      {% if validation %}
+      <button name="action" value="import"{% if validation.problem_count %} disabled{% endif %}>Importation</button>
+      {% endif %}
     </div>
   </form>
-  ${validation_html}
+  {% if validation %}
+  <div class="import-validation">
+    <h2>Fichier à importer</h2>
+    <table>
+      <thead><tr><th>#</th><th>Date</th><th>Intitulé</th><th>Montant</th><th>Commentaire</th><th>Erreur</th></tr></thead>
+      <tbody>
+        {% for row in validation.rows %}
+        <tr{% if row.row_class %} class="{{ row.row_class }}"{% endif %}>
+          <td>{{ row.line }}</td>
+          <td>{{ row.date }}</td>
+          <td>{{ row.label }}</td>
+          <td>{{ row.amount }}</td>
+          <td>{{ row.comment }}</td>
+          <td>{{ row.errors }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">Aucune ligne à valider.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="import-result">
+      <div><span>Records corrects</span><strong>{{ validation.correct_count }}</strong></div>
+      <div><span>Records problématiques</span><strong class="{{ validation.problem_class }}">{{ validation.problem_count }}</strong></div>
+      <div><span>Intitulés existants</span><strong>{{ validation.existing_label_count }}</strong></div>
+      <div><span>Intitulés à créer</span><strong>{{ validation.create_label_count }}</strong></div>
+    </div>
+  </div>
+  {% endif %}
 </section>

@@ -7,11 +7,11 @@ from io import StringIO
 from urllib.parse import parse_qs
 
 from components.common import panel_message
-from components.imports import import_button, render_validation
+from components.imports import validation_view
 from config import DATE_FORMAT
 from database import db
 from endpoints import api
-from web_helpers import esc, format_date, layout, period_label, render_template
+from web_helpers import format_date, layout, period_label, render_template
 
 
 DATE_FORMAT_LABELS = {
@@ -41,26 +41,19 @@ def page_html(
     validation: dict[str, object] | None = None,
 ) -> bytes:
     period_id = period["id"]
-    validation_html = render_validation(validation) if validation else ""
     body = render_template(
         "imports.html",
-        period_label=esc(period_label(period)),
+        period_label=period_label(period),
         period_id=period_id,
         account_id=account["id"],
-        account_name=esc(account["name"]),
-        period_name=esc(period["name"]),
-        period_start_date=esc(format_date(period["start_date"])),
-        period_end_date_clause=f" &lt;= {esc(format_date(period['end_date']))}" if period["end_date"] else "",
-        raw_csv=esc(raw_csv),
-        date_format_dmy_selected="selected" if date_format == "dmy" else "",
-        date_format_mdy_selected="selected" if date_format == "mdy" else "",
-        date_format_ymd_selected="selected" if date_format == "ymd" else "",
-        format_csv_header_selected="selected" if format_value == "csv_header" else "",
-        format_csv_no_header_selected="selected" if format_value == "csv_no_header" else "",
-        format_tsv_header_selected="selected" if format_value == "tsv_header" else "",
-        format_tsv_no_header_selected="selected" if format_value == "tsv_no_header" else "",
-        import_button=import_button(validation),
-        validation_html=validation_html,
+        account_name=account["name"],
+        period_name=period["name"],
+        period_start_date=format_date(period["start_date"]),
+        period_end_date=format_date(period["end_date"]) if period["end_date"] else "",
+        raw_csv=raw_csv,
+        date_format=date_format,
+        format_value=format_value,
+        validation=validation_view(validation),
     )
     return layout("Import CSV", body)
 
