@@ -2,7 +2,7 @@
 
 Application web locale pour gérer un budget par périodes, comptes et intitulés.
 
-Le projet est volontairement simple: un serveur Python standard library, une base SQLite locale, du HTML rendu côté serveur, et du JavaScript/CSS vanilla pour l'édition directe des tableaux.
+Le projet reste volontairement simple: un serveur Python standard library, une base SQLite locale, du HTML rendu côté serveur avec Jinja, et du JavaScript/CSS vanilla pour l'édition directe des tableaux.
 
 ## Fonctionnalités
 
@@ -49,6 +49,7 @@ Le code de migration/backfill legacy a été retiré: une base neuve est créée
 Depuis le dossier du projet:
 
 ```bash
+python3 -m pip install -r requirements.txt
 python3 app.py
 ```
 
@@ -159,6 +160,7 @@ Validation:
 ├── database.py
 ├── initial-data.yaml
 ├── README.md
+├── requirements.txt
 ├── web_helpers.py
 ├── .dockerignore
 ├── .github/

@@ -8,9 +8,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apk add --no-cache musl-locales musl-locales-lang
-
 COPY . .
+
+RUN apk add --no-cache musl-locales musl-locales-lang \
+    && pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 8000
 VOLUME ["/app/data"]

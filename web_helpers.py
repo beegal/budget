@@ -6,15 +6,24 @@ import string
 from datetime import date
 from pathlib import Path
 
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
 from config import DATE_ORDER, MONTH_LOOKUP, NUMBER_DECIMALS, strip_accents
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+JINJA_TEMPLATES = {"layout.html", "parameters.html"}
+JINJA_ENV = Environment(
+    loader=FileSystemLoader(TEMPLATES_DIR),
+    autoescape=select_autoescape(("html",)),
+)
 
 
 def render_template(name: str, **context: object) -> str:
     template_path = TEMPLATES_DIR / name
     if not template_path.exists():
         return f"Template {name} not found"
+    if name in JINJA_TEMPLATES:
+        return JINJA_ENV.get_template(name).render(**context)
     template_content = template_path.read_text(encoding="utf-8")
     return string.Template(template_content).safe_substitute(**context)
 
@@ -120,4 +129,4 @@ def period_label(row: sqlite3.Row) -> str:
 
 
 def layout(title: str, body: str) -> bytes:
-    return render_template("layout.html", title=esc(title), body=body).encode("utf-8")
+    return render_template("layout.html", title=title, body=body).encode("utf-8")
