@@ -1134,11 +1134,11 @@ td.editable {
 }
 
 .account-index-col {
-  width: 72px;
+  width: 42px;
 }
 
 .account-settings-table {
-  min-width: 820px;
+  min-width: 660px;
 }
 
 .account-settings-table col:nth-child(2) {
@@ -1146,11 +1146,11 @@ td.editable {
 }
 
 .account-summary-col {
-  width: 92px;
+  width: 68px;
 }
 
 .account-empty-col {
-  width: 132px;
+  width: 72px;
 }
 
 .budget-day-col {
@@ -1170,15 +1170,15 @@ td.editable {
 }
 
 .account-settings-table tr > :nth-child(1) {
-  width: 72px;
+  width: 42px;
 }
 
 .account-settings-table tr > :nth-child(3) {
-  width: 92px;
+  width: 68px;
 }
 
 .account-settings-table tr > :nth-child(4) {
-  width: 132px;
+  width: 72px;
 }
 
 .account-settings-table tr > :nth-child(5),
@@ -1193,6 +1193,17 @@ td.editable {
 
 .account-row-actions {
   position: relative;
+}
+
+.settings-table .account-row-actions .icon-button {
+  min-height: 26px;
+  min-width: 26px;
+  padding: 4px 6px;
+}
+
+.settings-table .account-row-actions .icon-button svg {
+  height: 14px;
+  width: 14px;
 }
 
 .account-merge-list {
@@ -1211,6 +1222,57 @@ td.editable {
   background: #e8f3f6;
   color: var(--accent-strong);
   padding: 7px 10px;
+}
+
+.settings-table,
+.monthly-budget-table {
+  font-size: 13px;
+  table-layout: fixed;
+}
+
+.settings-table th,
+.settings-table td,
+.monthly-budget-table th,
+.monthly-budget-table td {
+  line-height: 1.35;
+  padding: 4px 6px;
+  vertical-align: middle;
+}
+
+.settings-table input,
+.monthly-budget-table input,
+.monthly-budget-table .label-picker input {
+  font-size: inherit;
+  line-height: 1.35;
+  min-height: 0;
+  padding: 4px 6px;
+}
+
+.settings-table .row-confirm,
+.settings-table .row-cancel,
+.settings-table .row-delete,
+.settings-table .add-row-button,
+.settings-table .icon-button,
+.monthly-budget-table .row-confirm,
+.monthly-budget-table .row-cancel,
+.monthly-budget-table .row-delete,
+.monthly-budget-table .add-row-button {
+  min-height: 28px;
+  min-width: 28px;
+  padding: 4px 7px;
+}
+
+.settings-table .drag-handle,
+.settings-table .row-index-value {
+  min-height: 28px;
+  min-width: 28px;
+  padding: 4px 6px;
+}
+
+.settings-table .center-cell input[type="checkbox"] {
+  min-height: auto;
+  transform: scale(.9);
+  width: auto;
 }
 
 .label-settings-table tr > :nth-child(1),

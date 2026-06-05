@@ -1051,7 +1051,7 @@ function createSettingRow(table) {
   row.dataset.newRow = "true";
   row.className = "dirty";
   row.innerHTML = `
-    ${kind === "account" ? '<td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-account-drag-handle title="Déplacer">↕</button><span class="row-index-value" data-account-index></span></td>' : ""}
+    ${kind === "account" ? '<td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-account-drag-handle title="Déplacer">↕</button></td>' : ""}
     ${valueCells}
     ${kind === "account" ? '<td class="center-cell"><input type="checkbox" data-account-summary checked disabled></td><td class="center-cell"><input type="checkbox" data-account-visible-if-empty checked disabled></td>' : ""}
     <td class="row-actions">

@@ -2,7 +2,7 @@
 
 Application web locale pour gérer un budget par périodes, comptes et intitulés.
 
-Le projet reste volontairement simple: un serveur Python standard library, une base SQLite locale, du HTML rendu côté serveur avec Jinja, et du JavaScript/CSS vanilla pour l'édition directe des tableaux.
+Le projet reste volontairement simple: une application FastAPI locale, une base SQLite ou MySQL, du HTML rendu côté serveur avec Jinja, et du JavaScript/CSS vanilla pour l'édition directe des tableaux.
 
 ## Fonctionnalités
 
@@ -57,6 +57,12 @@ Depuis le dossier du projet:
 ```bash
 python3 -m pip install -r requirements.txt
 python3 app.py
+```
+
+Équivalent Uvicorn:
+
+```bash
+uvicorn app:application --host 127.0.0.1 --port 8000
 ```
 
 Puis ouvrir:

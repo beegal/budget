@@ -1,124 +1,127 @@
 from __future__ import annotations
 
-import json
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from database import db
 from endpoints import api, imports, parameters, period, periods, static_files, transactions
 
 
-class BudgetHandler(BaseHTTPRequestHandler):
-    def do_HEAD(self) -> None:
-        self.send_response(HTTPStatus.OK)
-        self.end_headers()
+application = FastAPI(title="Budget")
 
-    def do_GET(self) -> None:
-        parsed = urlparse(self.path)
-        static_asset = static_files.resolve(parsed.path)
-        if static_asset:
-            path, content_type = static_asset
-            self.serve_file(path, content_type)
-            return
-        if parsed.path == "/":
-            self.send_html(periods.page())
-            return
-        if parsed.path.startswith("/period/") and parsed.path.endswith("/import"):
-            period_id = int(parsed.path.removeprefix("/period/").split("/")[0])
-            self.send_html(imports.page(period_id, parsed.query))
-            return
-        if parsed.path.startswith("/period/"):
-            period_id = int(parsed.path.removeprefix("/period/").split("/")[0])
-            self.send_html(period.page(period_id, parsed.query))
-            return
-        if parsed.path == "/parameters":
-            self.send_html(parameters.page())
-            return
-        if parsed.path == "/transactions":
-            self.send_html(transactions.page(parsed.query))
-            return
-        self.send_error(HTTPStatus.NOT_FOUND)
 
-    def do_POST(self) -> None:
-        parsed = urlparse(self.path)
-        if parsed.path.startswith("/api/"):
-            result = api.update(parsed.path, self.json_data())
-            status = HTTPStatus.OK if result.pop("ok", False) else HTTPStatus(result.pop("status", 400))
-            self.send_json({"ok": status == HTTPStatus.OK, **result}, status)
-            return
+@application.on_event("startup")
+def startup() -> None:
+    with db():
+        pass
 
-        data = self.form_data()
-        if parsed.path == "/periods/create":
-            self.redirect(periods.create(data))
-            return
-        if parsed.path == "/parameters/accounts/create":
-            self.redirect(parameters.create_account(data))
-            return
-        if parsed.path == "/parameters/labels/create":
-            self.redirect(parameters.create_label(data))
-            return
-        if parsed.path == "/transactions/create":
-            self.redirect(transactions.create(data))
-            return
-        if parsed.path.startswith("/period/") and parsed.path.endswith("/import"):
-            period_id = int(parsed.path.removeprefix("/period/").split("/")[0])
-            result = imports.submit(period_id, data)
-            if isinstance(result, bytes):
-                self.send_html(result)
-            else:
-                self.redirect(result)
-            return
-        self.send_error(HTTPStatus.NOT_FOUND)
 
-    def serve_file(self, path, content_type: str) -> None:
-        if not path.exists():
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-        data = path.read_bytes()
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+@application.head("/{path:path}")
+def head(_path: str = "") -> Response:
+    return Response(status_code=HTTPStatus.OK)
 
-    def send_html(self, data: bytes) -> None:
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
 
-    def send_json(self, payload: dict[str, object], status: HTTPStatus = HTTPStatus.OK) -> None:
-        data = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+@application.get("/", response_class=HTMLResponse)
+def periods_page() -> HTMLResponse:
+    return html(periods.page())
 
-    def redirect(self, location: str) -> None:
-        self.send_response(HTTPStatus.SEE_OTHER)
-        self.send_header("Location", location)
-        self.end_headers()
 
-    def form_data(self) -> dict[str, list[str]]:
-        length = int(self.headers.get("Content-Length", 0))
-        return parse_qs(self.rfile.read(length).decode("utf-8"))
+@application.get("/period/{period_id}/import", response_class=HTMLResponse)
+def import_page(period_id: int, request: Request) -> HTMLResponse:
+    return html(imports.page(period_id, query_string(request)))
 
-    def json_data(self) -> dict[str, object]:
-        length = int(self.headers.get("Content-Length", 0))
-        if length == 0:
-            return {}
-        return json.loads(self.rfile.read(length).decode("utf-8"))
+
+@application.get("/period/{period_id}", response_class=HTMLResponse)
+def period_page(period_id: int, request: Request) -> HTMLResponse:
+    return html(period.page(period_id, query_string(request)))
+
+
+@application.get("/parameters", response_class=HTMLResponse)
+def parameters_page() -> HTMLResponse:
+    return html(parameters.page())
+
+
+@application.get("/transactions", response_class=HTMLResponse)
+def transactions_page(request: Request) -> HTMLResponse:
+    return html(transactions.page(query_string(request)))
+
+
+@application.post("/api/{path:path}", response_model=None)
+async def api_update(path: str, request: Request) -> JSONResponse:
+    result = api.update(f"/api/{path}", await json_data(request))
+    status = HTTPStatus.OK if result.pop("ok", False) else HTTPStatus(result.pop("status", 400))
+    return JSONResponse({"ok": status == HTTPStatus.OK, **result}, status_code=status)
+
+
+@application.post("/periods/create", response_model=None)
+async def create_period(request: Request) -> RedirectResponse:
+    return redirect(periods.create(await form_data(request)))
+
+
+@application.post("/parameters/accounts/create", response_model=None)
+async def create_account(request: Request) -> RedirectResponse:
+    return redirect(parameters.create_account(await form_data(request)))
+
+
+@application.post("/parameters/labels/create", response_model=None)
+async def create_label(request: Request) -> RedirectResponse:
+    return redirect(parameters.create_label(await form_data(request)))
+
+
+@application.post("/transactions/create", response_model=None)
+async def create_transaction(request: Request) -> RedirectResponse:
+    return redirect(transactions.create(await form_data(request)))
+
+
+@application.post("/period/{period_id}/import", response_model=None)
+async def import_submit(period_id: int, request: Request) -> Response:
+    result = imports.submit(period_id, await form_data(request))
+    if isinstance(result, bytes):
+        return html(result)
+    return redirect(result)
+
+
+@application.get("/{path:path}")
+def static_or_not_found(path: str) -> Response:
+    static_asset = static_files.resolve(f"/{path}")
+    if not static_asset:
+        return Response(status_code=HTTPStatus.NOT_FOUND)
+    file_path, content_type = static_asset
+    if not file_path.exists():
+        return Response(status_code=HTTPStatus.NOT_FOUND)
+    return Response(file_path.read_bytes(), media_type=content_type)
+
+
+def html(data: bytes) -> HTMLResponse:
+    return HTMLResponse(data.decode("utf-8"))
+
+
+def redirect(location: str) -> RedirectResponse:
+    return RedirectResponse(location, status_code=HTTPStatus.SEE_OTHER)
+
+
+def query_string(request: Request) -> str:
+    return request.url.query
+
+
+async def form_data(request: Request) -> dict[str, list[str]]:
+    return parse_qs((await request.body()).decode("utf-8"))
+
+
+async def json_data(request: Request) -> dict[str, object]:
+    data = await request.body()
+    if not data:
+        return {}
+    return await request.json()
 
 
 def run(host: str = "127.0.0.1", port: int = 8000) -> None:
-    with db():
-        pass
-    server = ThreadingHTTPServer((host, port), BudgetHandler)
-    print(f"Budget app running at http://{host}:{port}")
-    server.serve_forever()
+    import uvicorn
+
+    uvicorn.run(application, host=host, port=port)
 
 
 if __name__ == "__main__":
