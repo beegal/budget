@@ -99,6 +99,8 @@ def balance_row_view(period_id: int, row: sqlite3.Row) -> dict[str, object]:
         "opening_raw": balance_raw(row["opening"]),
         "opening_defined_class": balance_defined_class(row["opening"]),
         "opening_display": balance_display(row["opening"]),
+        "transaction_total": money(row["transaction_total"]),
+        "transaction_total_class": balance_tone(row["transaction_total"]),
         "current_class": balance_tone(row["current"]),
         "current_defined_class": balance_defined_class(row["current"]),
         "current_display": balance_money_display(row["current"]),
@@ -134,11 +136,11 @@ def money_or_empty(value: object) -> str:
 
 
 def balance_display(value: object) -> str:
-    return "non défini" if value is None else format_number(value)
+    return "inconnu" if value is None else format_number(value)
 
 
 def balance_money_display(value: object) -> str:
-    return "non défini" if value is None else money(value)
+    return "inconnu" if value is None else money(value)
 
 
 def balance_defined_class(value: object) -> str:
@@ -223,7 +225,7 @@ def account_tab_view(
         balance_title = (
             f"Solde: {money(running_balance)}"
             if opening_balance is not None
-            else "Solde: non défini"
+            else "Solde: inconnu"
         )
         rows.append(transaction_row_view(row, period, balance_title))
         amount = float(row["amount"] or 0)
@@ -232,7 +234,7 @@ def account_tab_view(
     current_balance = (
         f"Solde actuel : {money(running_balance)} - Total opérations : {money(operations_total)}"
         if opening_balance is not None
-        else f"Solde actuel : non défini - Total opérations : {money(operations_total)}"
+        else f"Solde actuel : inconnu - Total opérations : {money(operations_total)}"
     )
     opening_data = "" if opening_balance is None else format_number(opening_balance)
     return {

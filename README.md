@@ -25,6 +25,12 @@ La base SQLite locale se trouve dans:
 data/budget.sqlite3
 ```
 
+Le chemin peut être changé avec:
+
+```bash
+BUDGET_SQLITE_PATH=/chemin/budget.sqlite3 python3 app.py
+```
+
 La base n'est pas suivie par Git. À la première exécution, l'application crée le schéma et initialise les données depuis:
 
 ```text
@@ -72,6 +78,36 @@ display:
 ```
 
 `date-format` accepte `jj/mm/yy`, `mm/jj/yy` ou `yy-mm-jj`. Ce format sert notamment de valeur par défaut dans l'import CSV.
+
+La base de données peut aussi être configurée par variables d'environnement:
+
+```bash
+BUDGET_DB_BACKEND=sqlite
+BUDGET_SQLITE_PATH=data/budget.sqlite3
+```
+
+Pour MySQL:
+
+```bash
+BUDGET_DB_BACKEND=mysql
+BUDGET_MYSQL_HOST=127.0.0.1
+BUDGET_MYSQL_PORT=3306
+BUDGET_MYSQL_DATABASE=budget
+BUDGET_MYSQL_USER=budget
+BUDGET_MYSQL_PASSWORD=...
+```
+
+Pour créer la base et l'utilisateur MySQL avec le CLI:
+
+```bash
+BUDGET_DB_BACKEND=mysql \
+BUDGET_MYSQL_ROOT_USER=root \
+BUDGET_MYSQL_ROOT_PASSWORD=... \
+BUDGET_MYSQL_DATABASE=budget \
+BUDGET_MYSQL_USER=budget \
+BUDGET_MYSQL_PASSWORD=... \
+python3 budget_cli.py --db-backend mysql --create
+```
 
 ## Pages principales
 
@@ -215,6 +251,49 @@ Exemple d'exécution:
 docker run --rm -p 8000:8000 -v "$(pwd)/data:/app/data" beegal/budget:local
 ```
 
+### Docker avec MySQL géré
+
+Un fichier compose démarre l'application et une base MySQL:
+
+```bash
+BUDGET_MYSQL_ROOT_PASSWORD=... \
+BUDGET_MYSQL_PASSWORD=... \
+docker compose -f build/docker-compose.mysql.yml up --build
+```
+
+Volumes utilisés:
+
+- `budget-mysql-data`: données MySQL (`/var/lib/mysql`);
+- `budget-db-config`: copie des informations de connexion (`/app/config/db.env`);
+- `budget-app-data`: données locales de l'application.
+
+Au premier démarrage, le conteneur applicatif écrit `/app/config/db.env` si le fichier n'existe pas encore. Si les volumes existent déjà, le fichier est relu et la base MySQL garde ses données.
+
+Variables principales:
+
+- `BUDGET_HTTP_PORT`: port HTTP publié, par défaut `8000`;
+- `BUDGET_DB_BACKEND`: `sqlite` ou `mysql`;
+- `BUDGET_MYSQL_CREATE_DATABASE`: `1` pour créer/assurer la DB au démarrage, `0` sinon;
+- `BUDGET_MYSQL_HOST`, `BUDGET_MYSQL_PORT`;
+- `BUDGET_MYSQL_DATABASE`;
+- `BUDGET_MYSQL_USER`, `BUDGET_MYSQL_PASSWORD`;
+- `BUDGET_MYSQL_ROOT_USER`, `BUDGET_MYSQL_ROOT_PASSWORD`;
+- `BUDGET_DB_CONFIG_DIR`: dossier où écrire/lire `db.env`, par défaut `/app/config`.
+
+### Docker avec MySQL externe
+
+Pour utiliser une base existante:
+
+```bash
+BUDGET_MYSQL_HOST=mysql.example.local \
+BUDGET_MYSQL_DATABASE=budget \
+BUDGET_MYSQL_USER=budget \
+BUDGET_MYSQL_PASSWORD=... \
+docker compose -f build/docker-compose.external-mysql.yml up --build
+```
+
+Dans ce mode, `BUDGET_MYSQL_CREATE_DATABASE` vaut `0` par défaut. Mets-le à `1` seulement si l'utilisateur root est fourni et peut créer la base.
+
 ## GitHub Actions
 
 Le workflow `.github/workflows/docker-image.yml` construit et publie l'image Docker sur Docker Hub lors d'un push sur la branche `release`.
@@ -249,3 +328,29 @@ Le flag `--create` recrée une base vide. L'import accepte directement `.xlsx`; 
 Les dates de début/fin sont inférées depuis le texte de période visible dans le classeur. Les transactions sont importées même si leur date tombe hors de cette plage; le CLI affiche ces incohérences en `Incohérence importée` sans les filtrer, puis logge séparément les lignes réellement non importables.
 
 La feuille Excel `Budget` est ignorée par le CLI.
+
+## Export/import complet
+
+Le CLI peut exporter toute la base dans un classeur `.xlsx` simple, avec un onglet par table et un onglet `_meta`:
+
+```bash
+python3 budget_cli.py --export-full backup-budget.xlsx
+```
+
+Pour restaurer cet export dans une base vide:
+
+```bash
+python3 budget_cli.py --create --import-full backup-budget.xlsx
+```
+
+Les onglets exportés sont:
+
+- `period`
+- `accounts`
+- `transaction_labels`
+- `monthly_budget`
+- `account_balances`
+- `budget_schedule`
+- `transactions`
+
+L'import complet conserve les `id`, ce qui permet de reconstruire les relations entre périodes, comptes, soldes, budgets et transactions.

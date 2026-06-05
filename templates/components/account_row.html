@@ -3,7 +3,15 @@
   <td><input value="{{ name }}" data-setting-value data-original="{{ name }}" autocomplete="off"></td>
   <td class="center-cell"><input type="checkbox" data-account-summary data-id="{{ row_id }}"{% if show_in_summary %} checked{% endif %}></td>
   <td class="center-cell"><input type="checkbox" data-account-visible-if-empty data-id="{{ row_id }}"{% if visible_if_empty %} checked{% endif %}></td>
-  <td class="row-actions">
-    {{ actions | safe }}
+  <td class="row-actions account-row-actions">
+    <button type="button" class="row-confirm icon-button" data-merge-account title="Fusionner vers un autre compte" aria-label="Fusionner vers un autre compte">{{ merge_icon | safe }}</button>
+    <button type="button" class="row-delete icon-button" data-delete-account title="{{ delete_title }}" aria-label="{{ delete_title }}"{% if not can_delete %} disabled aria-disabled="true"{% endif %}>{{ trash_icon | safe }}</button>
+    <button type="button" class="row-confirm" data-confirm-setting hidden>V</button>
+    <button type="button" class="row-cancel" data-cancel-setting hidden>X</button>
+    <div class="account-merge-list" data-account-merge-list hidden>
+      {% for account in merge_choices %}
+      <button type="button" class="account-merge-choice" data-merge-target="{{ account.id }}">{{ account.name }}</button>
+      {% endfor %}
+    </div>
   </td>
 </tr>

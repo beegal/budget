@@ -1138,7 +1138,7 @@ td.editable {
 }
 
 .account-settings-table {
-  min-width: 720px;
+  min-width: 820px;
 }
 
 .account-settings-table col:nth-child(2) {
@@ -1165,6 +1165,10 @@ td.editable {
   width: 92px;
 }
 
+.account-actions-col {
+  width: 172px;
+}
+
 .account-settings-table tr > :nth-child(1) {
   width: 72px;
 }
@@ -1181,6 +1185,32 @@ td.editable {
 .label-settings-table tr > :nth-child(3),
 .monthly-budget-table tr > :nth-child(4) {
   width: 92px;
+}
+
+.account-settings-table tr > :nth-child(5) {
+  width: 172px;
+}
+
+.account-row-actions {
+  position: relative;
+}
+
+.account-merge-list {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 24px rgba(16, 24, 40, .14);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px;
+}
+
+.account-merge-choice {
+  background: #e8f3f6;
+  color: var(--accent-strong);
+  padding: 7px 10px;
 }
 
 .label-settings-table tr > :nth-child(1),

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from components.common import label_picker, row_action_buttons
+from components.common import icon, label_picker, row_action_buttons
 from web_helpers import format_number, render_template
 
 
@@ -16,7 +16,6 @@ def settings_row(kind: str, row_id: int, name: str) -> str:
         name=name,
         group_name=group_name,
         subcategory=subcategory,
-        actions=row_action_buttons("setting"),
     )
 
 
@@ -27,7 +26,26 @@ def split_label_name(name: str) -> tuple[str, str]:
     return group_name, subcategory
 
 
-def account_row(row_id: int, name: str, sort_index: int, show_in_summary: bool, visible_if_empty: bool) -> str:
+def account_row(
+    row_id: int,
+    name: str,
+    sort_index: int,
+    show_in_summary: bool,
+    visible_if_empty: bool,
+    transaction_count: int,
+    accounts: list[object],
+) -> str:
+    can_delete = transaction_count == 0
+    delete_title = (
+        "Supprimer le compte"
+        if can_delete
+        else f"Impossible de supprimer le compte car il contient {transaction_count} transaction(s)"
+    )
+    merge_choices = [
+        {"id": account["id"], "name": account["name"]}
+        for account in accounts
+        if int(account["id"]) != int(row_id)
+    ]
     return render_template(
         "components/account_row.html",
         row_id=row_id,
@@ -35,6 +53,12 @@ def account_row(row_id: int, name: str, sort_index: int, show_in_summary: bool, 
         sort_index=sort_index,
         show_in_summary=show_in_summary,
         visible_if_empty=visible_if_empty,
+        transaction_count=transaction_count,
+        can_delete=can_delete,
+        delete_title=delete_title,
+        merge_choices=merge_choices,
+        merge_icon=icon("merge"),
+        trash_icon=icon("trash"),
         actions=row_action_buttons("setting"),
     )
 

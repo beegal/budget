@@ -9,7 +9,16 @@ from web_helpers import layout, one, render_template
 
 def page() -> bytes:
     with db() as conn:
-        accounts = conn.execute("SELECT * FROM accounts ORDER BY sort_index, name").fetchall()
+        accounts = conn.execute(
+            """
+            SELECT a.*,
+                   COUNT(t.id) AS transaction_count
+            FROM accounts a
+            LEFT JOIN transactions t ON t.account_id = a.id
+            GROUP BY a.id
+            ORDER BY a.sort_index, a.name
+            """
+        ).fetchall()
         labels = conn.execute("SELECT * FROM transaction_labels ORDER BY name LIMIT 300").fetchall()
         budget_rows = conn.execute("SELECT * FROM monthly_budget ORDER BY day, label").fetchall()
     account_rows = "".join(
@@ -19,6 +28,8 @@ def page() -> bytes:
             row["sort_index"],
             bool(row["show_in_summary"]),
             bool(row["visible_if_empty"]),
+            int(row["transaction_count"] or 0),
+            accounts,
         )
         for row in accounts
     )

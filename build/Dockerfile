@@ -11,9 +11,11 @@ WORKDIR /app
 COPY . .
 
 RUN apk add --no-cache musl-locales musl-locales-lang \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.txt \
+    && chmod +x build/entrypoint.sh
 
 EXPOSE 8000
 VOLUME ["/app/data"]
 
+ENTRYPOINT ["build/entrypoint.sh"]
 CMD ["python", "-c", "import app; app.run(host='0.0.0.0', port=8000)"]

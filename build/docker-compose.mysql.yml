@@ -1,0 +1,42 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    image: beegal/budget:latest
+    ports:
+      - "${BUDGET_HTTP_PORT:-8000}:8000"
+    environment:
+      BUDGET_DB_BACKEND: mysql
+      BUDGET_DB_CONFIG_DIR: /app/config
+      BUDGET_MYSQL_CREATE_DATABASE: "${BUDGET_MYSQL_CREATE_DATABASE:-1}"
+      BUDGET_MYSQL_HOST: "${BUDGET_MYSQL_HOST:-mysql}"
+      BUDGET_MYSQL_PORT: "${BUDGET_MYSQL_PORT:-3306}"
+      BUDGET_MYSQL_DATABASE: "${BUDGET_MYSQL_DATABASE:-budget}"
+      BUDGET_MYSQL_USER: "${BUDGET_MYSQL_USER:-budget}"
+      BUDGET_MYSQL_PASSWORD: "${BUDGET_MYSQL_PASSWORD:-budget-password}"
+      BUDGET_MYSQL_ROOT_USER: "${BUDGET_MYSQL_ROOT_USER:-root}"
+      BUDGET_MYSQL_ROOT_PASSWORD: "${BUDGET_MYSQL_ROOT_PASSWORD:-budget-root-password}"
+    volumes:
+      - budget-app-data:/app/data
+      - budget-db-config:/app/config
+    depends_on:
+      - mysql
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: "${BUDGET_MYSQL_ROOT_PASSWORD:-budget-root-password}"
+      MYSQL_DATABASE: "${BUDGET_MYSQL_DATABASE:-budget}"
+      MYSQL_USER: "${BUDGET_MYSQL_USER:-budget}"
+      MYSQL_PASSWORD: "${BUDGET_MYSQL_PASSWORD:-budget-password}"
+    volumes:
+      - budget-mysql-data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+
+volumes:
+  budget-app-data:
+  budget-db-config:
+  budget-mysql-data:

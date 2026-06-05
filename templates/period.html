@@ -45,7 +45,7 @@
   <div class="panel">
     <h2>Soldes par compte</h2>
     <table class="overview-table balance-table">
-      <thead><tr><th>Compte</th><th class="num">Début</th><th class="num">Actuel</th></tr></thead>
+      <thead><tr><th>Compte</th><th class="num">Début</th><th class="num">Mouvements</th><th class="num">Actuel</th></tr></thead>
       <tbody>
         {% for row in content.balance_rows %}
         <tr>
@@ -58,10 +58,11 @@
               <button type="button" class="row-cancel" data-cancel-account-balance>X</button>
             </span>
           </td>
+          <td class="num {{ row.transaction_total_class }}">{{ row.transaction_total }}</td>
           <td class="num {{ row.current_class }} {{ row.current_defined_class }}" data-account-current-cell>{{ row.current_display }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="3">Aucun solde saisi.</td></tr>
+        <tr><td colspan="4">Aucun solde saisi.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import sqlite3
 from datetime import date, datetime
 
-from database import db
+from database import db, integrity_errors
 from web_helpers import format_date, format_number, normalize_date
 
 
@@ -40,7 +39,9 @@ def update(path: str, payload: dict[str, object]) -> dict[str, object]:
         elif path == "/api/account-balance":
             return {"ok": True, **update_account_balance(payload)}
         elif path == "/api/account-delete":
-            delete_account(payload)
+            return {"ok": True, **delete_account(payload)}
+        elif path == "/api/account-merge":
+            return {"ok": True, **merge_account(payload)}
         elif path == "/api/label-row":
             return {"ok": True, **save_label_row(payload)}
         elif path == "/api/label-delete":
@@ -63,7 +64,7 @@ def update(path: str, payload: dict[str, object]) -> dict[str, object]:
             update_label(payload)
         else:
             return {"ok": False, "status": 404, "error": "Endpoint introuvable"}
-    except (sqlite3.IntegrityError, ValueError, KeyError) as error:
+    except (*integrity_errors(), ValueError, KeyError) as error:
         return {"ok": False, "status": 400, "error": str(error)}
     return {"ok": True}
 
@@ -649,9 +650,9 @@ def update_account_balance(payload: dict[str, object]) -> dict[str, object]:
     current = None if value is None else value + float(transaction_total or 0)
     return {
         "value": "" if value is None else format_number(value),
-        "display": "non défini" if value is None else format_number(value),
+        "display": "inconnu" if value is None else format_number(value),
         "current": "" if current is None else format_number(current),
-        "current_display": "non défini" if current is None else format_number(current),
+        "current_display": "inconnu" if current is None else format_number(current),
     }
 
 
@@ -674,20 +675,55 @@ def delete_named_row(table: str, payload: dict[str, object]) -> None:
         conn.execute(f"DELETE FROM {table} WHERE id = ?", (int(payload["id"]),))
 
 
-def delete_account(payload: dict[str, object]) -> None:
+def delete_account(payload: dict[str, object]) -> dict[str, object]:
     account_id = int(payload["id"])
     with db() as conn:
-        used = conn.execute(
-            """
-            SELECT
-              EXISTS(SELECT 1 FROM transactions WHERE account_id = ?) AS has_transactions,
-              EXISTS(SELECT 1 FROM account_balances WHERE account_id = ?) AS has_balances
-            """,
-            (account_id, account_id),
-        ).fetchone()
-        if used["has_transactions"] or used["has_balances"]:
-            raise ValueError("Compte utilisé: décoche Synthèse au lieu de le supprimer")
+        transaction_count = int(conn.execute("SELECT COUNT(*) FROM transactions WHERE account_id = ?", (account_id,)).fetchone()[0])
+        if transaction_count:
+            raise ValueError(f"Impossible de supprimer le compte car il contient {transaction_count} transaction(s)")
+        conn.execute("DELETE FROM account_balances WHERE account_id = ?", (account_id,))
         conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+        compact_account_indexes(conn)
+        rows = account_indexes(conn)
+    return {"rows": rows}
+
+
+def merge_account(payload: dict[str, object]) -> dict[str, object]:
+    source_id = int(payload["id"])
+    target_id = int(payload["target_id"])
+    if source_id == target_id:
+        raise ValueError("Choisis un compte différent")
+    with db() as conn:
+        source = conn.execute("SELECT id FROM accounts WHERE id = ?", (source_id,)).fetchone()
+        target = conn.execute("SELECT id FROM accounts WHERE id = ?", (target_id,)).fetchone()
+        if source is None or target is None:
+            raise ValueError("Compte introuvable")
+        source_balances = conn.execute(
+            "SELECT period_id, opening FROM account_balances WHERE account_id = ?",
+            (source_id,),
+        ).fetchall()
+        for balance in source_balances:
+            existing = conn.execute(
+                "SELECT opening FROM account_balances WHERE period_id = ? AND account_id = ?",
+                (balance["period_id"], target_id),
+            ).fetchone()
+            if existing is None:
+                conn.execute(
+                    "INSERT INTO account_balances(period_id, account_id, opening) VALUES (?, ?, ?)",
+                    (balance["period_id"], target_id, balance["opening"]),
+                )
+            elif balance["opening"] is not None:
+                merged_opening = float(balance["opening"]) + float(existing["opening"] or 0)
+                conn.execute(
+                    "UPDATE account_balances SET opening = ? WHERE period_id = ? AND account_id = ?",
+                    (merged_opening, balance["period_id"], target_id),
+                )
+        conn.execute("UPDATE transactions SET account_id = ? WHERE account_id = ?", (target_id, source_id))
+        conn.execute("DELETE FROM account_balances WHERE account_id = ?", (source_id,))
+        conn.execute("DELETE FROM accounts WHERE id = ?", (source_id,))
+        compact_account_indexes(conn)
+        rows = account_indexes(conn)
+    return {"rows": rows}
 
 
 def update_simple(table: str, payload: dict[str, object]) -> None:

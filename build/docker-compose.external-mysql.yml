@@ -1,0 +1,26 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    image: beegal/budget:latest
+    ports:
+      - "${BUDGET_HTTP_PORT:-8000}:8000"
+    environment:
+      BUDGET_DB_BACKEND: mysql
+      BUDGET_DB_CONFIG_DIR: /app/config
+      BUDGET_MYSQL_CREATE_DATABASE: "${BUDGET_MYSQL_CREATE_DATABASE:-0}"
+      BUDGET_MYSQL_HOST: "${BUDGET_MYSQL_HOST:?BUDGET_MYSQL_HOST is required}"
+      BUDGET_MYSQL_PORT: "${BUDGET_MYSQL_PORT:-3306}"
+      BUDGET_MYSQL_DATABASE: "${BUDGET_MYSQL_DATABASE:-budget}"
+      BUDGET_MYSQL_USER: "${BUDGET_MYSQL_USER:-budget}"
+      BUDGET_MYSQL_PASSWORD: "${BUDGET_MYSQL_PASSWORD:?BUDGET_MYSQL_PASSWORD is required}"
+      BUDGET_MYSQL_ROOT_USER: "${BUDGET_MYSQL_ROOT_USER:-root}"
+      BUDGET_MYSQL_ROOT_PASSWORD: "${BUDGET_MYSQL_ROOT_PASSWORD:-}"
+    volumes:
+      - budget-app-data:/app/data
+      - budget-db-config:/app/config
+
+volumes:
+  budget-app-data:
+  budget-db-config:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+import os
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -8,9 +10,116 @@ from typing import Any
 from config import MONTH_NAMES, parse_simple_yaml
 
 ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / "data" / "budget.sqlite3"
+DB_PATH = Path(os.environ.get("BUDGET_SQLITE_PATH", str(ROOT / "data" / "budget.sqlite3"))).expanduser()
 INITIAL_DATA_PATH = ROOT / "initial-data.yaml"
-def db() -> sqlite3.Connection:
+
+
+class DictRow(dict):
+    def __init__(self, values: dict[str, Any], columns: list[str]):
+        super().__init__(values)
+        self._columns = columns
+
+    def __getitem__(self, key: object) -> Any:
+        if isinstance(key, int):
+            return super().__getitem__(self._columns[key])
+        return super().__getitem__(key)
+
+
+class ResultCursor:
+    def __init__(self, rows: list[tuple[Any, ...]], columns: list[str]):
+        self._rows = [DictRow(dict(zip(columns, row)), columns) for row in rows]
+        self._index = 0
+        self.rowcount = len(rows)
+        self.lastrowid = None
+
+    def fetchone(self) -> DictRow | None:
+        if self._index >= len(self._rows):
+            return None
+        row = self._rows[self._index]
+        self._index += 1
+        return row
+
+    def fetchall(self) -> list[DictRow]:
+        rows = self._rows[self._index :]
+        self._index = len(self._rows)
+        return rows
+
+
+class MySQLCursor:
+    def __init__(self, cursor: Any):
+        self._cursor = cursor
+        self.rowcount = cursor.rowcount
+        self.lastrowid = cursor.lastrowid
+        self._columns = [column[0] for column in cursor.description or []]
+
+    def fetchone(self) -> DictRow | None:
+        row = self._cursor.fetchone()
+        return DictRow(row, self._columns) if row is not None else None
+
+    def fetchall(self) -> list[DictRow]:
+        return [DictRow(row, self._columns) for row in self._cursor.fetchall()]
+
+
+class MySQLConnection:
+    backend = "mysql"
+
+    def __init__(self, conn: Any):
+        self._conn = conn
+        self._lastrowid = 0
+
+    def __enter__(self) -> "MySQLConnection":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        if exc_type is None:
+            self.commit()
+        else:
+            self.rollback()
+        self.close()
+
+    def execute(self, sql: str, parameters: tuple[object, ...] | list[object] = ()) -> MySQLCursor | ResultCursor:
+        normalized = sql.strip()
+        if normalized.upper().startswith("PRAGMA "):
+            return ResultCursor([], [])
+        if normalized.upper() == "SELECT LAST_INSERT_ROWID()":
+            return ResultCursor([(self._lastrowid,)], ["last_insert_rowid()"])
+        if normalized.upper().startswith("DELETE FROM SQLITE_SEQUENCE"):
+            return ResultCursor([], [])
+        cursor = self._conn.cursor()
+        try:
+            cursor.execute(mysql_sql(sql), tuple(parameters))
+        except Exception as error:
+            if getattr(error, "args", [None])[0] == 1061:
+                return ResultCursor([], [])
+            raise
+        self._lastrowid = cursor.lastrowid or self._lastrowid
+        return MySQLCursor(cursor)
+
+    def executemany(self, sql: str, parameters: list[tuple[object, ...]]) -> MySQLCursor:
+        cursor = self._conn.cursor()
+        cursor.executemany(mysql_sql(sql), parameters)
+        self._lastrowid = cursor.lastrowid or self._lastrowid
+        return MySQLCursor(cursor)
+
+    def executescript(self, sql: str) -> None:
+        for statement in mysql_schema_statements():
+            self.execute(statement)
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    def rollback(self) -> None:
+        self._conn.rollback()
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def db() -> sqlite3.Connection | MySQLConnection:
+    if database_backend() == "mysql":
+        conn = mysql_connect()
+        ensure_schema(conn)
+        return conn
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -19,7 +128,172 @@ def db() -> sqlite3.Connection:
     return conn
 
 
-def ensure_schema(conn: sqlite3.Connection) -> None:
+def database_backend() -> str:
+    return os.environ.get("BUDGET_DB_BACKEND", "sqlite").strip().lower()
+
+
+def integrity_errors() -> tuple[type[BaseException], ...]:
+    errors: list[type[BaseException]] = [sqlite3.IntegrityError]
+    try:
+        import pymysql
+
+        errors.append(pymysql.err.IntegrityError)
+    except ImportError:
+        pass
+    return tuple(errors)
+
+
+def mysql_connect(database_name: str | None = None) -> MySQLConnection:
+    try:
+        import pymysql
+        from pymysql.cursors import DictCursor
+    except ImportError as error:
+        raise RuntimeError("Le backend MySQL demande la dépendance PyMySQL.") from error
+
+    return MySQLConnection(
+        pymysql.connect(
+            host=os.environ.get("BUDGET_MYSQL_HOST", "127.0.0.1"),
+            port=int(os.environ.get("BUDGET_MYSQL_PORT", "3306")),
+            user=os.environ.get("BUDGET_MYSQL_USER", "budget"),
+            password=os.environ.get("BUDGET_MYSQL_PASSWORD", ""),
+            database=database_name or os.environ.get("BUDGET_MYSQL_DATABASE", "budget"),
+            charset="utf8mb4",
+            cursorclass=DictCursor,
+            autocommit=False,
+        )
+    )
+
+
+def mysql_admin_connect() -> MySQLConnection:
+    try:
+        import pymysql
+        from pymysql.cursors import DictCursor
+    except ImportError as error:
+        raise RuntimeError("Le backend MySQL demande la dépendance PyMySQL.") from error
+
+    return MySQLConnection(
+        pymysql.connect(
+            host=os.environ.get("BUDGET_MYSQL_HOST", "127.0.0.1"),
+            port=int(os.environ.get("BUDGET_MYSQL_PORT", "3306")),
+            user=os.environ.get("BUDGET_MYSQL_ROOT_USER", "root"),
+            password=os.environ.get("BUDGET_MYSQL_ROOT_PASSWORD", ""),
+            charset="utf8mb4",
+            cursorclass=DictCursor,
+            autocommit=False,
+        )
+    )
+
+
+def create_mysql_database() -> None:
+    database_name = mysql_identifier(os.environ.get("BUDGET_MYSQL_DATABASE", "budget"), "database")
+    user = mysql_identifier(os.environ.get("BUDGET_MYSQL_USER", "budget"), "user")
+    password = os.environ.get("BUDGET_MYSQL_PASSWORD", "")
+    with mysql_admin_connect() as conn:
+        conn.execute(f"CREATE DATABASE IF NOT EXISTS `{database_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+        conn.execute(f"CREATE USER IF NOT EXISTS `{user}`@'%' IDENTIFIED BY %s", (password,))
+        conn.execute(f"GRANT ALL PRIVILEGES ON `{database_name}`.* TO `{user}`@'%'")
+    with mysql_connect(database_name) as conn:
+        ensure_schema(conn)
+
+
+def mysql_identifier(value: str, label: str) -> str:
+    value = str(value or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_]+", value):
+        raise ValueError(f"Nom MySQL invalide pour {label}: {value}")
+    return value
+
+
+def mysql_sql(sql: str) -> str:
+    converted = sql.replace("INSERT OR IGNORE INTO", "INSERT IGNORE INTO")
+    converted = converted.replace("?", "%s")
+    converted = converted.replace(
+        "ON CONFLICT(period_id, account_id) DO UPDATE SET opening = excluded.opening",
+        "ON DUPLICATE KEY UPDATE opening = VALUES(opening)",
+    )
+    return converted
+
+
+def mysql_schema_statements() -> list[str]:
+    return [
+        """
+        CREATE TABLE IF NOT EXISTS period (
+            id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            start_date VARCHAR(10),
+            end_date VARCHAR(10)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS accounts (
+            id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            sort_index INT NOT NULL DEFAULT 1,
+            show_in_summary INT NOT NULL DEFAULT 1,
+            visible_if_empty INT NOT NULL DEFAULT 1
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS transaction_labels (
+            id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            period_id INT NOT NULL,
+            account_id INT NOT NULL,
+            date VARCHAR(10),
+            label VARCHAR(255) NOT NULL,
+            amount DOUBLE NOT NULL DEFAULT 0,
+            sort_index INT NOT NULL DEFAULT 1,
+            comment TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT fk_transactions_period FOREIGN KEY (period_id) REFERENCES period(id) ON DELETE CASCADE,
+            CONSTRAINT fk_transactions_account FOREIGN KEY (account_id) REFERENCES accounts(id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS account_balances (
+            id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            period_id INT NOT NULL,
+            account_id INT NOT NULL,
+            opening DOUBLE,
+            UNIQUE KEY uniq_account_balances_period_account (period_id, account_id),
+            CONSTRAINT fk_account_balances_period FOREIGN KEY (period_id) REFERENCES period(id) ON DELETE CASCADE,
+            CONSTRAINT fk_account_balances_account FOREIGN KEY (account_id) REFERENCES accounts(id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS monthly_budget (
+            id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            day INT NOT NULL,
+            label VARCHAR(255) NOT NULL,
+            amount DOUBLE NOT NULL DEFAULT 0,
+            CHECK(day BETWEEN 1 AND 31)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS budget_schedule (
+            id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            period_id INT NOT NULL,
+            label VARCHAR(255) NOT NULL,
+            amount DOUBLE NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'scheduled',
+            CHECK(status IN ('scheduled', 'found', 'cancel')),
+            CONSTRAINT fk_budget_schedule_period FOREIGN KEY (period_id) REFERENCES period(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """,
+        "CREATE INDEX idx_transactions_period ON transactions(period_id)",
+        "CREATE INDEX idx_transactions_account ON transactions(account_id)",
+        "CREATE INDEX idx_transactions_date ON transactions(date)",
+        "CREATE INDEX idx_budget_schedule_period ON budget_schedule(period_id)",
+        "CREATE INDEX idx_budget_schedule_match ON budget_schedule(period_id, label, amount, status)",
+    ]
+
+
+def ensure_schema(conn: sqlite3.Connection | MySQLConnection) -> None:
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS period (

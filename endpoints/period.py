@@ -160,6 +160,7 @@ def period_balance_rows(conn: sqlite3.Connection, period_id: int) -> list[sqlite
         SELECT a.id AS account_id,
                a.name,
                ab.opening,
+               COALESCE(SUM(t.amount), 0) AS transaction_total,
                CASE
                    WHEN ab.opening IS NULL THEN NULL
                    ELSE ab.opening + COALESCE(SUM(t.amount), 0)

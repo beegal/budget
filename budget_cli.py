@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from xml.sax.saxutils import escape
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
@@ -18,6 +20,29 @@ XLSX_NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 REL_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 EXCEL_EPOCH = date(1899, 12, 30)
 PERIOD_SHEET_SKIP = {"budget", "feuil1"}
+FULL_EXPORT_VERSION = "1"
+FULL_EXPORT_TABLES = [
+    ("period", ["id", "name", "start_date", "end_date"]),
+    ("accounts", ["id", "name", "sort_index", "show_in_summary", "visible_if_empty"]),
+    ("transaction_labels", ["id", "name"]),
+    ("monthly_budget", ["id", "day", "label", "amount"]),
+    ("account_balances", ["id", "period_id", "account_id", "opening"]),
+    ("budget_schedule", ["id", "period_id", "label", "amount", "status"]),
+    (
+        "transactions",
+        ["id", "period_id", "account_id", "date", "label", "amount", "sort_index", "comment", "created_at", "updated_at"],
+    ),
+]
+INTEGER_COLUMNS = {
+    "id",
+    "period_id",
+    "account_id",
+    "sort_index",
+    "show_in_summary",
+    "visible_if_empty",
+    "day",
+}
+FLOAT_COLUMNS = {"amount", "opening"}
 
 
 @dataclass
@@ -69,23 +94,32 @@ class PeriodImport:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Importe le classeur Personnal-Budget dans la base Budget.")
+    parser = argparse.ArgumentParser(description="Importe, exporte ou initialise la base Budget.")
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Chemin vers la base SQLite.")
+    parser.add_argument(
+        "--db-backend",
+        choices=("sqlite", "mysql"),
+        default=os.environ.get("BUDGET_DB_BACKEND", "sqlite"),
+        help="Backend de base de données. Défaut: BUDGET_DB_BACKEND ou sqlite.",
+    )
     parser.add_argument("--create", action="store_true", help="Recrée une base vide avant l'import.")
     parser.add_argument("--import", dest="import_path", help="Classeur Personnal-Budget .xlsx/.xls à importer.")
+    parser.add_argument("--export-full", dest="export_full_path", help="Exporte toute la base dans un classeur .xlsx.")
+    parser.add_argument("--import-full", dest="import_full_path", help="Importe toute la base depuis un export complet .xlsx.")
     args = parser.parse_args()
 
+    os.environ["BUDGET_DB_BACKEND"] = args.db_backend
     db_path = Path(args.db).expanduser()
     if args.create:
-        create_database(db_path)
-        print(f"Base créée: {db_path}")
-    elif not db_path.exists():
+        create_database(db_path, args.db_backend)
+        print(f"Base créée: {database_label(db_path, args.db_backend)}")
+    elif args.db_backend == "sqlite" and not db_path.exists():
         create_database(db_path)
         print(f"Base créée: {db_path}")
 
     if args.import_path:
         workbook_path = resolve_workbook_path(Path(args.import_path).expanduser())
-        summary = import_workbook(db_path, workbook_path)
+        summary = import_workbook(db_path, workbook_path, args.db_backend)
         print(f"Import terminé: {workbook_path}")
         print(f"Feuilles ignorées: {', '.join(summary['ignored_sheets']) or '-'}")
         print(f"Périodes: {summary['periods']}")
@@ -107,12 +141,39 @@ def main() -> int:
                 f"compte {problem.account or '-'}, intitulé {problem.label or '-'}: {problem.reason}"
             )
 
-    if not args.create and not args.import_path:
+    if args.export_full_path:
+        export_path = Path(args.export_full_path).expanduser()
+        summary = export_full_database(db_path, export_path, args.db_backend)
+        print(f"Export complet terminé: {export_path}")
+        for table_name, count in summary.items():
+            print(f"{table_name}: {count}")
+
+    if args.import_full_path:
+        import_path = resolve_workbook_path(Path(args.import_full_path).expanduser())
+        summary = import_full_database(db_path, import_path, args.db_backend)
+        print(f"Import complet terminé: {import_path}")
+        for table_name, count in summary.items():
+            print(f"{table_name}: {count}")
+
+    if not args.create and not args.import_path and not args.export_full_path and not args.import_full_path:
         parser.print_help()
     return 0
 
 
-def create_database(db_path: Path) -> None:
+def database_label(db_path: Path, backend: str) -> str:
+    if backend == "mysql":
+        return (
+            f"mysql://{os.environ.get('BUDGET_MYSQL_HOST', '127.0.0.1')}:"
+            f"{os.environ.get('BUDGET_MYSQL_PORT', '3306')}/"
+            f"{os.environ.get('BUDGET_MYSQL_DATABASE', 'budget')}"
+        )
+    return str(db_path)
+
+
+def create_database(db_path: Path, backend: str = "sqlite") -> None:
+    if backend == "mysql":
+        database.create_mysql_database()
+        return
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if db_path.exists():
         db_path.unlink()
@@ -121,6 +182,203 @@ def create_database(db_path: Path) -> None:
         conn.execute("PRAGMA foreign_keys = ON")
         database.ensure_schema(conn)
         database.clear_all_data(conn)
+
+
+def open_database(db_path: Path, backend: str) -> sqlite3.Connection | database.MySQLConnection:
+    if backend == "mysql":
+        return database.db()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    database.ensure_schema(conn)
+    return conn
+
+
+def export_full_database(db_path: Path, export_path: Path, backend: str = "sqlite") -> dict[str, int]:
+    export_path.parent.mkdir(parents=True, exist_ok=True)
+    with open_database(db_path, backend) as conn:
+        sheets: list[tuple[str, list[list[object]]]] = [
+            (
+                "_meta",
+                [
+                    ["key", "value"],
+                    ["format", "budget-full-export"],
+                    ["version", FULL_EXPORT_VERSION],
+                    ["exported_at", datetime.now().isoformat(timespec="seconds")],
+                ],
+            )
+        ]
+        summary: dict[str, int] = {}
+        for table_name, columns in FULL_EXPORT_TABLES:
+            rows = conn.execute(f"SELECT {', '.join(columns)} FROM {table_name} ORDER BY id").fetchall()
+            sheets.append((table_name, [columns, *[[row[column] for column in columns] for row in rows]]))
+            summary[table_name] = len(rows)
+    write_xlsx(export_path, sheets)
+    return summary
+
+
+def import_full_database(db_path: Path, import_path: Path, backend: str = "sqlite") -> dict[str, int]:
+    sheets = {sheet.name: sheet for sheet in read_xlsx(import_path)}
+    validate_full_import(sheets)
+    with open_database(db_path, backend) as conn:
+        database.clear_all_data(conn)
+        summary: dict[str, int] = {}
+        for table_name, columns in FULL_EXPORT_TABLES:
+            rows = full_import_rows(sheets[table_name], columns)
+            if rows:
+                placeholders = ", ".join("?" for _ in columns)
+                conn.executemany(
+                    f"INSERT INTO {table_name}({', '.join(columns)}) VALUES ({placeholders})",
+                    rows,
+                )
+            summary[table_name] = len(rows)
+        conn.commit()
+        return summary
+
+
+def validate_full_import(sheets: dict[str, WorkbookSheet]) -> None:
+    missing = [table_name for table_name, _columns in FULL_EXPORT_TABLES if table_name not in sheets]
+    if "_meta" not in sheets:
+        missing.insert(0, "_meta")
+    if missing:
+        raise ValueError(f"Onglet(s) manquant(s) dans l'export complet: {', '.join(missing)}")
+    meta = rows_to_records(sheets["_meta"])
+    meta_values = {str(row.get("key") or ""): str(row.get("value") or "") for row in meta}
+    if meta_values.get("format") != "budget-full-export":
+        raise ValueError("Le classeur n'est pas un export complet Budget.")
+    if meta_values.get("version") != FULL_EXPORT_VERSION:
+        raise ValueError(f"Version d'export non supportée: {meta_values.get('version') or '-'}")
+
+
+def full_import_rows(sheet: WorkbookSheet, expected_columns: list[str]) -> list[tuple[object, ...]]:
+    records = rows_to_records(sheet)
+    rows: list[tuple[object, ...]] = []
+    for index, record in enumerate(records, start=2):
+        missing = [column for column in expected_columns if column not in record]
+        if missing:
+            raise ValueError(f"Onglet {sheet.name}, ligne {index}: colonne(s) manquante(s): {', '.join(missing)}")
+        rows.append(tuple(import_cell_value(column, record[column]) for column in expected_columns))
+    return rows
+
+
+def rows_to_records(sheet: WorkbookSheet) -> list[dict[str, str]]:
+    header = [sheet.rows.get(1, {}).get(column, "") for column in sorted(sheet.rows.get(1, {}))]
+    if not header:
+        return []
+    records: list[dict[str, str]] = []
+    for row_number in sorted(sheet.rows):
+        if row_number == 1:
+            continue
+        row = sheet.rows[row_number]
+        records.append({header[column]: row.get(column, "") for column in range(len(header))})
+    return records
+
+
+def import_cell_value(column: str, value: str) -> object:
+    value = str(value or "").strip()
+    if value == "":
+        return None
+    if column in INTEGER_COLUMNS:
+        return int(value)
+    if column in FLOAT_COLUMNS:
+        return float(value)
+    return value
+
+
+def write_xlsx(path: Path, sheets: list[tuple[str, list[list[object]]]]) -> None:
+    with ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", xlsx_content_types(len(sheets)))
+        archive.writestr("_rels/.rels", xlsx_root_rels())
+        archive.writestr("xl/workbook.xml", xlsx_workbook(sheets))
+        archive.writestr("xl/_rels/workbook.xml.rels", xlsx_workbook_rels(len(sheets)))
+        for index, (_name, rows) in enumerate(sheets, start=1):
+            archive.writestr(f"xl/worksheets/sheet{index}.xml", xlsx_sheet(rows))
+
+
+def xlsx_content_types(sheet_count: int) -> str:
+    sheet_overrides = "\n".join(
+        f'<Override PartName="/xl/worksheets/sheet{index}.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        for index in range(1, sheet_count + 1)
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        f"{sheet_overrides}</Types>"
+    )
+
+
+def xlsx_root_rels() -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+        'Target="xl/workbook.xml"/>'
+        "</Relationships>"
+    )
+
+
+def xlsx_workbook(sheets: list[tuple[str, list[list[object]]]]) -> str:
+    sheet_tags = "\n".join(
+        f'<sheet name="{escape(sheet_name)}" sheetId="{index}" r:id="rId{index}"/>'
+        for index, (sheet_name, _rows) in enumerate(sheets, start=1)
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        f"<sheets>{sheet_tags}</sheets>"
+        "</workbook>"
+    )
+
+
+def xlsx_workbook_rels(sheet_count: int) -> str:
+    rel_tags = "\n".join(
+        f'<Relationship Id="rId{index}" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+        f'Target="worksheets/sheet{index}.xml"/>'
+        for index in range(1, sheet_count + 1)
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        f"{rel_tags}</Relationships>"
+    )
+
+
+def xlsx_sheet(rows: list[list[object]]) -> str:
+    row_tags = []
+    for row_number, row in enumerate(rows, start=1):
+        cells = []
+        for column, value in enumerate(row):
+            if value is None:
+                continue
+            cell_ref = f"{column_letters(column)}{row_number}"
+            cells.append(
+                f'<c r="{cell_ref}" t="inlineStr"><is><t>{escape(str(value))}</t></is></c>'
+            )
+        row_tags.append(f'<row r="{row_number}">{"".join(cells)}</row>')
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f'<sheetData>{"".join(row_tags)}</sheetData>'
+        "</worksheet>"
+    )
+
+
+def column_letters(index: int) -> str:
+    index += 1
+    letters = ""
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
 
 
 def resolve_workbook_path(path: Path) -> Path:
@@ -133,16 +391,14 @@ def resolve_workbook_path(path: Path) -> Path:
     raise FileNotFoundError(f"Classeur introuvable: {path}")
 
 
-def import_workbook(db_path: Path, workbook_path: Path) -> dict[str, object]:
+def import_workbook(db_path: Path, workbook_path: Path, backend: str = "sqlite") -> dict[str, object]:
     if workbook_path.suffix.lower() == ".xls":
         raise ValueError("Le format .xls binaire n'est pas supporté sans xlrd. Sauve le fichier en .xlsx.")
     sheets = read_xlsx(workbook_path)
     periods = build_periods(sheets)
     ignored_sheets = [sheet.name for sheet in sheets if sheet.name.lower() in PERIOD_SHEET_SKIP]
 
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
+    with open_database(db_path, backend) as conn:
         account_ids: dict[str, int] = {}
         label_names: set[str] = set()
         transaction_count = 0

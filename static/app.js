@@ -34,7 +34,7 @@ function updateTransactionRunningBalances(table) {
 
   table.querySelectorAll("tbody tr").forEach((row) => {
     const index = row.querySelector(".row-index-value");
-    const title = balanceDefined ? `Solde: ${formatDisplayMoney(runningBalance, decimals)}` : "Solde: non défini";
+    const title = balanceDefined ? `Solde: ${formatDisplayMoney(runningBalance, decimals)}` : "Solde: inconnu";
     if (index) {
       index.title = title;
       index.setAttribute("aria-label", title);
@@ -50,7 +50,7 @@ function updateTransactionRunningBalances(table) {
   if (currentBalance) {
     currentBalance.textContent = balanceDefined
       ? `Solde actuel : ${formatDisplayMoney(runningBalance, decimals)} - Total opérations : ${formatDisplayMoney(operationsTotal, decimals)}`
-      : `Solde actuel : non défini - Total opérations : ${formatDisplayMoney(operationsTotal, decimals)}`;
+      : `Solde actuel : inconnu - Total opérations : ${formatDisplayMoney(operationsTotal, decimals)}`;
   }
 }
 
@@ -174,7 +174,7 @@ async function saveAccountBalanceEditor(cell) {
   cell.dataset.original = savedValue;
   if (input) input.value = savedValue;
   if (display) {
-    display.textContent = result.display || "non défini";
+    display.textContent = result.display || "inconnu";
     display.classList.toggle("balance-undefined", !savedValue);
     display.hidden = false;
   }
@@ -182,7 +182,7 @@ async function saveAccountBalanceEditor(cell) {
   setAccountBalanceTone(cell, savedValue);
   const currentCell = cell.closest("tr")?.querySelector("[data-account-current-cell]");
   if (currentCell) {
-    currentCell.textContent = result.current_display || "non défini";
+    currentCell.textContent = result.current_display || "inconnu";
     currentCell.classList.toggle("balance-undefined", !result.current);
     setAccountBalanceTone(currentCell, result.current || "");
   }
@@ -461,6 +461,7 @@ function createEmptyRow(table) {
 
 async function saveSettingRow(row) {
   const kind = row.dataset.kind || row.closest("[data-settings-table]")?.dataset.kind;
+  const wasNewAccount = kind === "account" && row.dataset.newRow === "true";
   const inputs = settingInputs(row);
   const value = settingRowValue(row, kind);
   const response = await fetch(`/api/${kind}-row`, {
@@ -489,6 +490,10 @@ async function saveSettingRow(row) {
   inputs.forEach((input) => input.classList.remove("save-error"));
   row.classList.remove("dirty");
   setSettingActions(row, false);
+  if (wasNewAccount) {
+    window.location.reload();
+    return;
+  }
   if (kind === "account") applyAccountIndexes(row.closest("[data-settings-table]"), result.rows || []);
   if (kind === "label") addLabelName(result.value);
 }
@@ -577,6 +582,64 @@ async function deleteSettingRow(row) {
   }
   row.remove();
   setSaveState(state, "Supprimé");
+}
+
+async function deleteAccountRow(row) {
+  if (row.dataset.newRow === "true") {
+    row.remove();
+    resetSaveState();
+    return;
+  }
+  const state = document.querySelector("[data-save-state]");
+  setSaveState(state, "Suppression...");
+  const response = await fetch("/api/account-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: row.dataset.id }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    row.querySelector("[data-setting-value]")?.classList.add("save-error");
+    setSaveState(state, result.error || "Erreur", true);
+    return;
+  }
+  row.remove();
+  applyAccountIndexes(document.querySelector('[data-settings-table][data-kind="account"]'), result.rows || []);
+  setSaveState(state, "Supprimé");
+}
+
+function closeAccountMergeLists(exceptList = null) {
+  document.querySelectorAll("[data-account-merge-list]").forEach((candidate) => {
+    if (candidate !== exceptList) candidate.hidden = true;
+  });
+}
+
+function toggleAccountMergeList(row) {
+  const list = row.querySelector("[data-account-merge-list]");
+  if (!list) return;
+  closeAccountMergeLists(list);
+  list.hidden = !list.hidden;
+}
+
+async function mergeAccountRow(button) {
+  const row = button.closest("[data-settings-row]");
+  const state = document.querySelector("[data-save-state]");
+  setSaveState(state, "Fusion...");
+  const response = await fetch("/api/account-merge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: row.dataset.id, target_id: button.dataset.mergeTarget }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    row.querySelector("[data-setting-value]")?.classList.add("save-error");
+    setSaveState(state, result.error || "Erreur", true);
+    return;
+  }
+  row.remove();
+  closeAccountMergeLists();
+  applyAccountIndexes(document.querySelector('[data-settings-table][data-kind="account"]'), result.rows || []);
+  setSaveState(state, "Compte fusionné");
 }
 
 async function reorderAccountRow(row, targetRow, position) {
@@ -1218,6 +1281,11 @@ document.addEventListener("keydown", async (event) => {
     closeBudgetAccountLists();
     return;
   }
+  if (event.key === "Escape" && document.querySelector("[data-account-merge-list]:not([hidden])")) {
+    event.preventDefault();
+    closeAccountMergeLists();
+    return;
+  }
   if (event.key === "Escape" && accountBalanceInput) {
     event.preventDefault();
     cancelAccountBalanceEditor(accountBalanceInput.closest("[data-account-balance-cell]"));
@@ -1476,6 +1544,9 @@ document.addEventListener("click", async (event) => {
   if (!event.target.closest("[data-budget-account-list], [data-budget-schedule-confirm]")) {
     closeBudgetAccountLists();
   }
+  if (!event.target.closest("[data-account-merge-list], [data-merge-account]")) {
+    closeAccountMergeLists();
+  }
 
   const hideAccountTabButton = event.target.closest("[data-hide-account-tab]");
   if (hideAccountTabButton) {
@@ -1628,6 +1699,24 @@ document.addEventListener("click", async (event) => {
   const addSettingRow = event.target.closest("[data-add-setting-row]");
   if (addSettingRow) {
     createSettingRow(addSettingRow.closest("[data-settings-table]"));
+  }
+
+  const mergeAccount = event.target.closest("[data-merge-account]");
+  if (mergeAccount) {
+    toggleAccountMergeList(mergeAccount.closest("[data-settings-row]"));
+    return;
+  }
+
+  const mergeAccountChoice = event.target.closest("[data-merge-target]");
+  if (mergeAccountChoice) {
+    await mergeAccountRow(mergeAccountChoice);
+    return;
+  }
+
+  const deleteAccount = event.target.closest("[data-delete-account]");
+  if (deleteAccount) {
+    await deleteAccountRow(deleteAccount.closest("[data-settings-row]"));
+    return;
   }
 
   const confirmSetting = event.target.closest("[data-confirm-setting]");
