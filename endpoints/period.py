@@ -9,25 +9,27 @@ from database import db
 from web_helpers import layout, period_label, render_template
 
 
-def page(period_id: int, query: str) -> bytes:
+def page(period_id: int, query: str, user_id: str) -> bytes:
     params = parse_qs(query)
     active = params.get("account", ["overview"])[0]
     with db() as conn:
-        period = conn.execute("SELECT * FROM period WHERE id = ?", (period_id,)).fetchone()
+        period = conn.execute("SELECT * FROM period WHERE id = ? AND user_id = ?", (period_id, user_id)).fetchone()
         if period is None:
             return layout("Introuvable", panel_message("Période introuvable"))
         navigation_periods = conn.execute(
             """
             SELECT id, name, start_date
             FROM period
+            WHERE user_id = ?
             ORDER BY COALESCE(start_date, ''), id
-            """
+            """,
+            (user_id,),
         ).fetchall()
-        accounts = period_accounts(conn, period_id)
-        labels = conn.execute("SELECT id, name FROM transaction_labels ORDER BY name").fetchall()
-        summary_rows = period_summary_rows(conn, period_id)
-        balance_rows = period_balance_rows(conn, period_id)
-        transfer_rows = period_transfer_rows(conn, period_id)
+        accounts = period_accounts(conn, period_id, user_id)
+        labels = conn.execute("SELECT id, name FROM transaction_labels WHERE user_id = ? ORDER BY name", (user_id,)).fetchall()
+        summary_rows = period_summary_rows(conn, period_id, user_id)
+        balance_rows = period_balance_rows(conn, period_id, user_id)
+        transfer_rows = period_transfer_rows(conn, period_id, user_id)
         selected_account = None
         account_transactions: list[sqlite3.Row] = []
         budget_rows = []
@@ -36,31 +38,33 @@ def page(period_id: int, query: str) -> bytes:
                 """
                 SELECT *
                 FROM budget_schedule
-                WHERE period_id = ?
+                WHERE period_id = ? AND user_id = ?
                 ORDER BY id
                 """,
-                (period_id,),
+                (period_id, user_id),
             ).fetchall()
         elif active != "overview":
             selected_account = conn.execute(
                 """
                 SELECT a.*, ab.opening
                 FROM accounts a
-                LEFT JOIN account_balances ab ON ab.account_id = a.id AND ab.period_id = ?
-                WHERE a.id = ?
+                LEFT JOIN account_balances ab ON ab.account_id = a.id AND ab.period_id = ? AND ab.user_id = ?
+                WHERE a.id = ? AND a.user_id = ?
                 """,
-                (period_id, active),
+                (period_id, user_id, active, user_id),
             ).fetchone()
             account_transactions = conn.execute(
                 """
                 SELECT t.*, a.name AS account_name
                 FROM transactions t
                 JOIN accounts a ON a.id = t.account_id
-                WHERE t.period_id = ? AND t.account_id = ?
+                WHERE t.period_id = ? AND t.account_id = ? AND t.user_id = ?
                 ORDER BY COALESCE(t.date, '9999-12-31'), t.sort_index, t.id
                 """,
-                (period_id, active),
+                (period_id, active, user_id),
             ).fetchall()
+            if selected_account is None:
+                return layout("Introuvable", panel_message("Compte introuvable"))
 
     visible_accounts = [
         account
@@ -107,7 +111,7 @@ def period_navigation_link(period: sqlite3.Row | None, active: str) -> dict[str,
     }
 
 
-def period_accounts(conn: sqlite3.Connection, period_id: int) -> list[sqlite3.Row]:
+def period_accounts(conn: sqlite3.Connection, period_id: int, user_id: str) -> list[sqlite3.Row]:
     return conn.execute(
         """
         SELECT a.id,
@@ -120,16 +124,17 @@ def period_accounts(conn: sqlite3.Connection, period_id: int) -> list[sqlite3.Ro
                    ELSE ab.opening + COALESCE(SUM(t.amount), 0)
                END AS current
         FROM accounts a
-        LEFT JOIN account_balances ab ON ab.account_id = a.id AND ab.period_id = ?
-        LEFT JOIN transactions t ON t.account_id = a.id AND t.period_id = ?
+        LEFT JOIN account_balances ab ON ab.account_id = a.id AND ab.period_id = ? AND ab.user_id = ?
+        LEFT JOIN transactions t ON t.account_id = a.id AND t.period_id = ? AND t.user_id = ?
+        WHERE a.user_id = ?
         GROUP BY a.id
         ORDER BY a.sort_index, a.name
         """,
-        (period_id, period_id),
+        (period_id, user_id, period_id, user_id, user_id),
     ).fetchall()
 
 
-def period_summary_rows(conn: sqlite3.Connection, period_id: int) -> list[sqlite3.Row]:
+def period_summary_rows(conn: sqlite3.Connection, period_id: int, user_id: str) -> list[sqlite3.Row]:
     return conn.execute(
         """
         WITH grouped AS (
@@ -140,7 +145,7 @@ def period_summary_rows(conn: sqlite3.Connection, period_id: int) -> list[sqlite
                 END AS label_group,
                 t.amount
             FROM transactions t
-            WHERE t.period_id = ?
+            WHERE t.period_id = ? AND t.user_id = ?
         )
         SELECT grouped.label_group,
                COALESCE(SUM(CASE WHEN grouped.amount > 0 THEN grouped.amount END), 0) AS income,
@@ -150,11 +155,11 @@ def period_summary_rows(conn: sqlite3.Connection, period_id: int) -> list[sqlite
         GROUP BY grouped.label_group
         ORDER BY grouped.label_group
         """,
-        (period_id,),
+        (period_id, user_id),
     ).fetchall()
 
 
-def period_balance_rows(conn: sqlite3.Connection, period_id: int) -> list[sqlite3.Row]:
+def period_balance_rows(conn: sqlite3.Connection, period_id: int, user_id: str) -> list[sqlite3.Row]:
     return conn.execute(
         """
         SELECT a.id AS account_id,
@@ -166,17 +171,17 @@ def period_balance_rows(conn: sqlite3.Connection, period_id: int) -> list[sqlite
                    ELSE ab.opening + COALESCE(SUM(t.amount), 0)
                END AS current
         FROM accounts a
-        LEFT JOIN account_balances ab ON ab.account_id = a.id AND ab.period_id = ?
-        LEFT JOIN transactions t ON t.account_id = a.id AND t.period_id = ?
-        WHERE a.show_in_summary = 1
+        LEFT JOIN account_balances ab ON ab.account_id = a.id AND ab.period_id = ? AND ab.user_id = ?
+        LEFT JOIN transactions t ON t.account_id = a.id AND t.period_id = ? AND t.user_id = ?
+        WHERE a.show_in_summary = 1 AND a.user_id = ?
         GROUP BY a.id
         ORDER BY a.sort_index, a.name
         """,
-        (period_id, period_id),
+        (period_id, user_id, period_id, user_id, user_id),
     ).fetchall()
 
 
-def period_transfer_rows(conn: sqlite3.Connection, period_id: int) -> list[sqlite3.Row]:
+def period_transfer_rows(conn: sqlite3.Connection, period_id: int, user_id: str) -> list[sqlite3.Row]:
     return conn.execute(
         """
         SELECT t.date,
@@ -186,6 +191,7 @@ def period_transfer_rows(conn: sqlite3.Connection, period_id: int) -> list[sqlit
         FROM transactions t
         JOIN accounts a ON a.id = t.account_id
         WHERE t.period_id = ?
+          AND t.user_id = ?
           AND LOWER(TRIM(
                 CASE
                     WHEN INSTR(t.label, '-') > 0 THEN SUBSTR(t.label, 1, INSTR(t.label, '-') - 1)
@@ -194,5 +200,5 @@ def period_transfer_rows(conn: sqlite3.Connection, period_id: int) -> list[sqlit
               )) IN ('virement interne', 'transfert', 'transferts', 'transfert interne', 'transferts internes')
         ORDER BY COALESCE(t.date, '9999-12-31'), t.sort_index, t.id
         """,
-        (period_id,),
+        (period_id, user_id),
     ).fetchall()

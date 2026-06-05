@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import calendar
 import locale
+import re
 from pathlib import Path
 from typing import Any
 import unicodedata
@@ -121,6 +122,19 @@ def load_config() -> dict[str, Any]:
 def strip_accents(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value)
     return "".join(char for char in normalized if not unicodedata.combining(char)).lower()
+
+
+def normalize_import_name(value: object) -> str:
+    raw = " ".join(str(value or "").strip().split())
+    if not raw:
+        return ""
+    return re.sub(r"[^\W_]+(?:['’][^\W_]+)?", normalize_import_word, raw, flags=re.UNICODE)
+
+
+def normalize_import_word(match: re.Match[str]) -> str:
+    word = match.group(0)
+    lowered = word.lower()
+    return lowered[0].upper() + lowered[1:]
 
 
 def get_default_locale() -> str:

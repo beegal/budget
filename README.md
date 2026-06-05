@@ -39,6 +39,7 @@ initial-data.yaml
 
 Tables actives:
 
+- `users`
 - `period`
 - `accounts`
 - `transaction_labels`
@@ -48,7 +49,20 @@ Tables actives:
 - `budget_schedule`
 
 L'application ne dépend plus du fichier Excel initial.
-Le code de migration/backfill legacy a été retiré: une base neuve est créée directement avec le schéma courant.
+Le schéma courant est créé directement pour les bases neuves. Une migration légère conserve les données existantes en ajoutant `user_id` aux tables métier.
+
+## Utilisateurs
+
+L'application est multi-user via FastAPI Users avec une authentification par cookie HTTP-only.
+
+- `/register`: registration rapide par email et mot de passe;
+- `/login`: connexion;
+- `/logout`: suppression du cookie de session.
+- `/admin`: interface réservée aux admins pour lister les utilisateurs, changer un mot de passe, activer/désactiver un compte et attribuer/retirer le rôle admin.
+
+Chaque table métier contient `user_id` et toutes les lectures/écritures filtrent sur l'utilisateur connecté. Les données historiques sans utilisateur sont marquées temporairement avec un identifiant legacy, puis adoptées par le premier utilisateur qui s'enregistre.
+
+La table `users` contient aussi `last_login`, mis à jour quand un utilisateur authentifié accède à l'application.
 
 ## Démarrer l'application
 
@@ -103,6 +117,17 @@ BUDGET_MYSQL_USER=budget
 BUDGET_MYSQL_PASSWORD=...
 ```
 
+Configuration auth:
+
+```bash
+BUDGET_AUTH_SECRET=change-me
+BUDGET_AUTH_COOKIE_MAX_AGE=2592000
+BUDGET_AUTH_COOKIE_SECURE=0
+BUDGET_AUTH_LIFETIME=2592000
+```
+
+En production, `BUDGET_AUTH_SECRET` doit être une valeur longue et privée. Mets `BUDGET_AUTH_COOKIE_SECURE=1` derrière HTTPS.
+
 Pour créer la base et l'utilisateur MySQL avec le CLI:
 
 ```bash
@@ -112,8 +137,28 @@ BUDGET_MYSQL_ROOT_PASSWORD=... \
 BUDGET_MYSQL_DATABASE=budget \
 BUDGET_MYSQL_USER=budget \
 BUDGET_MYSQL_PASSWORD=... \
-python3 budget_cli.py --db-backend mysql --create
+python3 budget_cli.py --db-backend mysql db create
 ```
+
+Pour lancer l'application sur MySQL:
+
+```bash
+BUDGET_DB_BACKEND=mysql \
+BUDGET_MYSQL_HOST=127.0.0.1 \
+BUDGET_MYSQL_PORT=3306 \
+BUDGET_MYSQL_DATABASE=budget \
+BUDGET_MYSQL_USER=budget \
+BUDGET_MYSQL_PASSWORD=... \
+python3 app.py
+```
+
+Avec un Docker local classique, `BUDGET_MYSQL_HOST=127.0.0.1` fonctionne si le port MySQL est publié sur l'hôte. Avec Docker via Minikube (`eval $(minikube docker-env)`), le port est publié sur la VM Minikube; utilise alors:
+
+```bash
+export BUDGET_MYSQL_HOST="$(minikube ip)"
+```
+
+La base MySQL est créée/ajustée avec `CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`; les tables héritent de ce défaut. Le schéma ne force pas le moteur des tables et laisse MySQL utiliser son moteur par défaut, InnoDB. Cela reste compatible avec SQLite: deux noms qui diffèrent seulement par la casse, par exemple `CASH` et `Cash`, restent distincts.
 
 ## Pages principales
 
@@ -181,7 +226,7 @@ Validation:
 - coloration vert/rouge du budget mensuel;
 - factorisation du picker d'intitulés et des boutons d'action;
 - nettoyage des tables et colonnes non utilisées;
-- suppression du code de migration historique;
+- ajout d'une migration de schéma pour isoler les données par utilisateur;
 - ajout d'un build Docker Alpine Python et d'un workflow GitHub Actions.
 
 ## Structure
@@ -320,37 +365,44 @@ Secrets requis:
 Un utilitaire CLI permet de recréer la base et d'importer le classeur `Personnal-Budget`:
 
 ```bash
-python3 budget_cli.py --create --import Personnal-Budget.xls
+python3 budget_cli.py db create
+python3 budget_cli.py workbook import Personnal-Budget.xls --user user@example.com
 ```
 
 Par défaut, la base utilisée est `data/budget.sqlite3`. Pour tester dans une autre base:
 
 ```bash
-python3 budget_cli.py --db /tmp/budget-test.sqlite3 --create --import Personnal-Budget.xlsx
+python3 budget_cli.py --db /tmp/budget-test.sqlite3 db create
+python3 budget_cli.py --db /tmp/budget-test.sqlite3 users create user@example.com
+python3 budget_cli.py --db /tmp/budget-test.sqlite3 workbook import Personnal-Budget.xlsx --user user@example.com
 ```
 
-Le flag `--create` recrée une base vide. L'import accepte directement `.xlsx`; si `Personnal-Budget.xls` est demandé mais que `Personnal-Budget.xlsx` existe, le fichier `.xlsx` est utilisé.
+La commande `db create` recrée une base vide. L'import accepte directement `.xlsx`; si `Personnal-Budget.xls` est demandé mais que `Personnal-Budget.xlsx` existe, le fichier `.xlsx` est utilisé. L'option `--user` cible l'utilisateur de destination par email ou UUID. Si cet utilisateur ne contient que les données initiales vides, elles sont retirées avant l'import.
 
 Les dates de début/fin sont inférées depuis le texte de période visible dans le classeur. Les transactions sont importées même si leur date tombe hors de cette plage; le CLI affiche ces incohérences en `Incohérence importée` sans les filtrer, puis logge séparément les lignes réellement non importables.
 
 La feuille Excel `Budget` est ignorée par le CLI.
+
+Les comptes et intitulés importés sont normalisés en casse titre pour éviter les doublons de saisie (`CASH`, `cash` et `Cash` deviennent `Cash`): première lettre en majuscule, le reste en minuscule.
 
 ## Export/import complet
 
 Le CLI peut exporter toute la base dans un classeur `.xlsx` simple, avec un onglet par table et un onglet `_meta`:
 
 ```bash
-python3 budget_cli.py --export-full backup-budget.xlsx
+python3 budget_cli.py export full backup-budget.xlsx
 ```
 
 Pour restaurer cet export dans une base vide:
 
 ```bash
-python3 budget_cli.py --create --import-full backup-budget.xlsx
+python3 budget_cli.py db create
+python3 budget_cli.py import full backup-budget.xlsx
 ```
 
 Les onglets exportés sont:
 
+- `users`
 - `period`
 - `accounts`
 - `transaction_labels`
@@ -359,4 +411,79 @@ Les onglets exportés sont:
 - `budget_schedule`
 - `transactions`
 
-L'import complet conserve les `id`, ce qui permet de reconstruire les relations entre périodes, comptes, soldes, budgets et transactions.
+L'import complet conserve les `id` et les `user_id`, ce qui permet de reconstruire les relations entre utilisateurs, périodes, comptes, soldes, budgets et transactions.
+
+## Migration SQLite vers MySQL
+
+Exemple avec un MySQL Docker de test:
+
+```bash
+eval "$(minikube docker-env)" # seulement si tu utilises le Docker de Minikube
+docker run --name budget-mysql-test \
+  -e MYSQL_ROOT_PASSWORD=rootpass \
+  -e MYSQL_DATABASE=budget_test \
+  -e MYSQL_USER=budget \
+  -e MYSQL_PASSWORD=budgetpass \
+  -p 3307:3306 \
+  -d mysql:8.0
+```
+
+Si Docker est local:
+
+```bash
+export BUDGET_MYSQL_HOST=127.0.0.1
+```
+
+Si Docker pointe vers Minikube:
+
+```bash
+export BUDGET_MYSQL_HOST="$(minikube ip)"
+```
+
+Puis:
+
+```bash
+export BUDGET_MYSQL_PORT=3307
+export BUDGET_MYSQL_DATABASE=budget_test
+export BUDGET_MYSQL_USER=budget
+export BUDGET_MYSQL_PASSWORD=budgetpass
+export BUDGET_MYSQL_ROOT_USER=root
+export BUDGET_MYSQL_ROOT_PASSWORD=rootpass
+
+cp data/budget.sqlite3 /tmp/budget-source.sqlite3
+python3 budget_cli.py --db /tmp/budget-source.sqlite3 export full /tmp/budget-full.xlsx
+python3 budget_cli.py --db-backend mysql db create
+python3 budget_cli.py --db-backend mysql import full /tmp/budget-full.xlsx
+python3 budget_cli.py --db-backend mysql export full /tmp/budget-mysql-check.xlsx
+```
+
+La dernière commande permet de réexporter MySQL et de comparer les onglets avec l'export source si nécessaire.
+
+## Export/import utilisateur
+
+Depuis l'écran `Paramètres`, un utilisateur connecté peut exporter ses propres données dans un `.xlsx`, puis les réimporter plus tard. Cet import remplace uniquement ses données métier; il ne touche pas aux autres utilisateurs ni aux comptes d'authentification.
+
+Le CLI expose la même fonction pour un utilisateur donné, identifié par email ou UUID:
+
+```bash
+python3 budget_cli.py export user user@example.com budget-user.xlsx
+python3 budget_cli.py import user user@example.com budget-user.xlsx
+```
+
+Contrairement à `export full`, cet export ne contient pas la table `users` et ne conserve pas les `user_id`; à l'import, les périodes et comptes sont recréés pour l'utilisateur cible.
+
+## Administration CLI
+
+Le CLI est basé sur Typer et Rich. Il peut administrer les utilisateurs avec une aide moderne et des tables lisibles:
+
+```bash
+python3 budget_cli.py users list
+python3 budget_cli.py users create user@example.com --password Password123!
+python3 budget_cli.py users set-password user@example.com --password NewPassword123!
+python3 budget_cli.py users enable user@example.com
+python3 budget_cli.py users disable user@example.com
+python3 budget_cli.py users make-admin user@example.com
+python3 budget_cli.py users revoke-admin user@example.com
+```
+
+`users list` affiche une table ASCII avec l'UUID, l'email, la dernière connexion, le nombre de comptes, le nombre de transactions, le statut actif/inactif et le rôle admin.

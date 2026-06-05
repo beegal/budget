@@ -4,12 +4,14 @@ from datetime import date, datetime, timedelta
 import sqlite3
 
 from components.periods import period_card_view
+import database
 from database import db
 from web_helpers import format_date, layout, normalize_date, one, period_label, render_template
 
 
-def page() -> bytes:
+def page(user_id: str) -> bytes:
     with db() as conn:
+        database.ensure_user_data(conn, user_id)
         periods = conn.execute(
             """
             SELECT m.*,
@@ -26,15 +28,19 @@ def page() -> bytes:
                        COALESCE(SUM(CASE WHEN amount < 0 THEN amount END), 0) AS expense,
                        COALESCE(SUM(amount), 0) AS net
                 FROM transactions
+                WHERE user_id = ?
                 GROUP BY period_id
             ) tx ON tx.period_id = m.id
             LEFT JOIN (
                 SELECT period_id, COUNT(*) AS budget_count
                 FROM budget_schedule
+                WHERE user_id = ?
                 GROUP BY period_id
             ) bs ON bs.period_id = m.id
+            WHERE m.user_id = ?
             ORDER BY COALESCE(m.start_date, '') DESC, m.id DESC
-            """
+            """,
+            (user_id, user_id, user_id),
         ).fetchall()
     overlap_reasons = period_warnings(periods)
     period_views = [
@@ -82,7 +88,7 @@ def periods_overlap(start: date, end: date | None, other_start: date, other_end:
     return start < (other_end or date.max) and other_start < (end or date.max)
 
 
-def create(data: dict[str, list[str]]) -> str:
+def create(data: dict[str, list[str]], user_id: str) -> str:
     start_date = datetime.strptime(normalize_date(one(data, "start_date")), "%Y-%m-%d").date()
     end_date = normalize_period_end(one(data, "end_date"))
     previous_end_date = (start_date - timedelta(days=1)).isoformat()
@@ -91,37 +97,41 @@ def create(data: dict[str, list[str]]) -> str:
             """
             UPDATE period
             SET end_date = ?
-            WHERE start_date IS NOT NULL AND end_date IS NULL AND start_date < ?
+            WHERE user_id = ? AND start_date IS NOT NULL AND end_date IS NULL AND start_date < ?
             """,
-            (previous_end_date, start_date.isoformat()),
+            (previous_end_date, user_id, start_date.isoformat()),
         )
         conn.execute(
-            "INSERT INTO period(name, start_date, end_date) VALUES (?, ?, ?)",
-            (one(data, "name"), start_date.isoformat(), end_date),
+            "INSERT INTO period(user_id, name, start_date, end_date) VALUES (?, ?, ?, ?)",
+            (user_id, one(data, "name"), start_date.isoformat(), end_date),
         )
-        period_id = conn.execute("SELECT id FROM period WHERE name = ?", (one(data, "name"),)).fetchone()["id"]
-        account_ids = conn.execute("SELECT id FROM accounts").fetchall()
+        period_id = conn.execute(
+            "SELECT id FROM period WHERE user_id = ? AND name = ?",
+            (user_id, one(data, "name")),
+        ).fetchone()["id"]
+        account_ids = conn.execute("SELECT id FROM accounts WHERE user_id = ?", (user_id,)).fetchall()
         for account in account_ids:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO account_balances(period_id, account_id, opening)
-                VALUES (?, ?, NULL)
+                INSERT OR IGNORE INTO account_balances(user_id, period_id, account_id, opening)
+                VALUES (?, ?, ?, NULL)
                 """,
-                (period_id, account["id"]),
+                (user_id, period_id, account["id"]),
             )
-        seed_budget_schedule(conn, period_id)
+        seed_budget_schedule(conn, period_id, user_id)
     return "/"
 
 
-def seed_budget_schedule(conn, period_id: int) -> None:
+def seed_budget_schedule(conn, period_id: int, user_id: str) -> None:
     conn.execute(
         """
-        INSERT INTO budget_schedule(period_id, label, amount, status)
-        SELECT ?, label, amount, 'scheduled'
+        INSERT INTO budget_schedule(user_id, period_id, label, amount, status)
+        SELECT ?, ?, label, amount, 'scheduled'
         FROM monthly_budget
+        WHERE user_id = ?
         ORDER BY day, id
         """,
-        (period_id,),
+        (user_id, period_id, user_id),
     )
 
 

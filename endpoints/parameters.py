@@ -7,20 +7,28 @@ from database import db
 from web_helpers import layout, one, render_template
 
 
-def page() -> bytes:
+def page(user_id: str) -> bytes:
     with db() as conn:
         accounts = conn.execute(
             """
             SELECT a.*,
                    COUNT(t.id) AS transaction_count
             FROM accounts a
-            LEFT JOIN transactions t ON t.account_id = a.id
+            LEFT JOIN transactions t ON t.account_id = a.id AND t.user_id = ?
+            WHERE a.user_id = ?
             GROUP BY a.id
             ORDER BY a.sort_index, a.name
-            """
+            """,
+            (user_id, user_id),
         ).fetchall()
-        labels = conn.execute("SELECT * FROM transaction_labels ORDER BY name LIMIT 300").fetchall()
-        budget_rows = conn.execute("SELECT * FROM monthly_budget ORDER BY day, label").fetchall()
+        labels = conn.execute(
+            "SELECT * FROM transaction_labels WHERE user_id = ? ORDER BY name LIMIT 300",
+            (user_id,),
+        ).fetchall()
+        budget_rows = conn.execute(
+            "SELECT * FROM monthly_budget WHERE user_id = ? ORDER BY day, label",
+            (user_id,),
+        ).fetchall()
     account_rows = "".join(
         account_row(
             row["id"],
@@ -52,13 +60,13 @@ def page() -> bytes:
     return layout("Paramètres", body)
 
 
-def create_account(data: dict[str, list[str]]) -> str:
+def create_account(data: dict[str, list[str]], user_id: str) -> str:
     with db() as conn:
-        conn.execute("INSERT OR IGNORE INTO accounts(name) VALUES (?)", (one(data, "name"),))
+        conn.execute("INSERT OR IGNORE INTO accounts(user_id, name) VALUES (?, ?)", (user_id, one(data, "name")))
     return "/parameters"
 
 
-def create_label(data: dict[str, list[str]]) -> str:
+def create_label(data: dict[str, list[str]], user_id: str) -> str:
     with db() as conn:
-        conn.execute("INSERT OR IGNORE INTO transaction_labels(name) VALUES (?)", (one(data, "name"),))
+        conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, one(data, "name")))
     return "/parameters"

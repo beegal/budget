@@ -8,7 +8,7 @@ from urllib.parse import parse_qs
 
 from components.common import panel_message
 from components.imports import validation_view
-from config import DATE_FORMAT
+from config import DATE_FORMAT, normalize_import_name
 from database import db
 from endpoints import api
 from web_helpers import format_date, layout, parse_month, period_label, render_template
@@ -21,12 +21,15 @@ DATE_FORMAT_LABELS = {
 }
 
 
-def page(period_id: int, query: str) -> bytes:
+def page(period_id: int, query: str, user_id: str) -> bytes:
     params = parse_qs(query)
     account_id = params.get("account", [""])[0]
     with db() as conn:
-        period = conn.execute("SELECT * FROM period WHERE id = ?", (period_id,)).fetchone()
-        account = conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone() if account_id else None
+        period = conn.execute("SELECT * FROM period WHERE id = ? AND user_id = ?", (period_id, user_id)).fetchone()
+        account = conn.execute(
+            "SELECT * FROM accounts WHERE id = ? AND user_id = ?",
+            (account_id, user_id),
+        ).fetchone() if account_id else None
     if period is None or account is None:
         return layout("Import introuvable", panel_message("Import introuvable"))
     return page_html(period, account, "", default_date_format(), "csv_header")
@@ -58,18 +61,21 @@ def page_html(
     return layout("Import CSV", body)
 
 
-def submit(period_id: int, data: dict[str, list[str]]) -> str | bytes:
+def submit(period_id: int, data: dict[str, list[str]], user_id: str) -> str | bytes:
     account_id = (data.get("account_id") or [""])[0]
     raw_csv = (data.get("csv_import") or [""])[0]
     date_format = (data.get("date_format") or [default_date_format()])[0]
     format_value = (data.get("format") or ["csv_header"])[0]
     action = (data.get("action") or ["validate"])[0]
     with db() as conn:
-        period = conn.execute("SELECT * FROM period WHERE id = ?", (period_id,)).fetchone()
-        account = conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone() if account_id else None
+        period = conn.execute("SELECT * FROM period WHERE id = ? AND user_id = ?", (period_id, user_id)).fetchone()
+        account = conn.execute(
+            "SELECT * FROM accounts WHERE id = ? AND user_id = ?",
+            (account_id, user_id),
+        ).fetchone() if account_id else None
     if period is None or account is None:
         return "/"
-    validation = validate_csv(period_id, raw_csv, date_format, format_value)
+    validation = validate_csv(period_id, raw_csv, date_format, format_value, user_id)
     if action != "import" or validation["problem_count"]:
         return page_html(period, account, raw_csv, date_format, format_value, validation)
     for row in validation["rows"]:
@@ -83,6 +89,7 @@ def submit(period_id: int, data: dict[str, list[str]]) -> str | bytes:
                 "amount": row["amount"],
                 "comment": row["comment"],
             },
+            user_id,
         )
         if not result.get("ok"):
             break
@@ -93,7 +100,7 @@ def csv_rows(raw_csv: str, format_value: str = "csv_header") -> list[list[str]]:
     delimiter = "\t" if format_value.startswith("tsv") else ","
     reader = csv.reader(StringIO(raw_csv), delimiter=delimiter)
     rows = [row for row in reader if any(cell.strip() for cell in row)]
-    if rows and "header" in format_value:
+    if rows and format_value in {"csv_header", "tsv_header"}:
         rows = rows[1:]
     return rows
 
@@ -165,8 +172,8 @@ def parse_import_day_month(parts: list[str], date_format: str) -> tuple[int, int
     return int(parts[0]), int(parts[1])
 
 
-def import_year_candidates(conn: sqlite3.Connection, period_id: int) -> list[int]:
-    period = conn.execute("SELECT start_date, end_date FROM period WHERE id = ?", (period_id,)).fetchone()
+def import_year_candidates(conn: sqlite3.Connection, period_id: int, user_id: str) -> list[int]:
+    period = conn.execute("SELECT start_date, end_date FROM period WHERE id = ? AND user_id = ?", (period_id, user_id)).fetchone()
     years = []
     for field in ("start_date", "end_date"):
         raw = period[field] if period else ""
@@ -176,19 +183,19 @@ def import_year_candidates(conn: sqlite3.Connection, period_id: int) -> list[int
     return list(dict.fromkeys(years))
 
 
-def validate_csv(period_id: int, raw_csv: str, date_format: str = "dmy", format_value: str = "csv_header") -> dict[str, object]:
+def validate_csv(period_id: int, raw_csv: str, date_format: str = "dmy", format_value: str = "csv_header", user_id: str = "") -> dict[str, object]:
     parsed_rows = []
     labels_to_create = set()
     with db() as conn:
-        year_candidates = import_year_candidates(conn, period_id)
+        year_candidates = import_year_candidates(conn, period_id, user_id)
         existing_labels = {
             row["name"].strip().lower()
-            for row in conn.execute("SELECT name FROM transaction_labels").fetchall()
+            for row in conn.execute("SELECT name FROM transaction_labels WHERE user_id = ?", (user_id,)).fetchall()
         }
         for line_number, row in enumerate(csv_rows(raw_csv, format_value), start=1):
             padded = [*row, "", "", "", ""]
             date_value = padded[0].strip()
-            label = padded[1].strip()
+            label = normalize_import_name(padded[1])
             amount_value = padded[2].strip()
             comment = padded[3].strip()
             errors = []
@@ -198,7 +205,7 @@ def validate_csv(period_id: int, raw_csv: str, date_format: str = "dmy", format_
                 for year in year_candidates:
                     try:
                         normalized_date = normalize_import_date(date_value, date_format, year)
-                        api.validate_transaction_date(conn, period_id, normalized_date)
+                        api.validate_transaction_date(conn, period_id, normalized_date, user_id)
                         last_error = None
                         break
                     except ValueError as error:

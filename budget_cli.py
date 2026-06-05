@@ -1,27 +1,69 @@
 from __future__ import annotations
 
-import argparse
 import os
 import re
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
+from typing import Literal
 from xml.sax.saxutils import escape
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
+from fastapi_users.password import PasswordHelper
+from rich import box
+from rich.console import Console
+from rich.table import Table
+import typer
+
+from config import normalize_import_name
 import database
 
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = ROOT / "data" / "budget.sqlite3"
+Backend = Literal["sqlite", "mysql"]
+console = Console(width=160)
+app = typer.Typer(
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    help="Administration et imports/exports Budget.",
+)
+db_app = typer.Typer(help="Gestion de la base de données.")
+workbook_app = typer.Typer(help="Import du classeur Personnal-Budget.")
+export_app = typer.Typer(help="Exports XLSX.")
+import_app = typer.Typer(help="Imports XLSX.")
+users_app = typer.Typer(help="Administration des utilisateurs.")
+app.add_typer(db_app, name="db")
+app.add_typer(workbook_app, name="workbook")
+app.add_typer(export_app, name="export")
+app.add_typer(import_app, name="import")
+app.add_typer(users_app, name="users")
 XLSX_NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 REL_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 EXCEL_EPOCH = date(1899, 12, 30)
 PERIOD_SHEET_SKIP = {"budget", "feuil1"}
-FULL_EXPORT_VERSION = "1"
+FULL_EXPORT_VERSION = "2"
 FULL_EXPORT_TABLES = [
+    ("users", ["id", "email", "hashed_password", "is_active", "is_superuser", "is_verified", "last_login"]),
+    ("period", ["id", "user_id", "name", "start_date", "end_date"]),
+    ("accounts", ["id", "user_id", "name", "sort_index", "show_in_summary", "visible_if_empty"]),
+    ("transaction_labels", ["id", "user_id", "name"]),
+    ("monthly_budget", ["id", "user_id", "day", "label", "amount"]),
+    ("account_balances", ["id", "user_id", "period_id", "account_id", "opening"]),
+    ("budget_schedule", ["id", "user_id", "period_id", "label", "amount", "status"]),
+    (
+        "transactions",
+        ["id", "user_id", "period_id", "account_id", "date", "label", "amount", "sort_index", "comment", "created_at", "updated_at"],
+    ),
+]
+USER_EXPORT_VERSION = "1"
+USER_EXPORT_TABLES = [
     ("period", ["id", "name", "start_date", "end_date"]),
     ("accounts", ["id", "name", "sort_index", "show_in_summary", "visible_if_empty"]),
     ("transaction_labels", ["id", "name"]),
@@ -93,71 +135,217 @@ class PeriodImport:
     problems: list[ImportProblem]
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Importe, exporte ou initialise la base Budget.")
-    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Chemin vers la base SQLite.")
-    parser.add_argument(
+@app.callback()
+def main(
+    ctx: typer.Context,
+    db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db", help="Chemin vers la base SQLite."),
+    db_backend: Backend = typer.Option(
+        os.environ.get("BUDGET_DB_BACKEND", "sqlite"),
         "--db-backend",
-        choices=("sqlite", "mysql"),
-        default=os.environ.get("BUDGET_DB_BACKEND", "sqlite"),
-        help="Backend de base de données. Défaut: BUDGET_DB_BACKEND ou sqlite.",
-    )
-    parser.add_argument("--create", action="store_true", help="Recrée une base vide avant l'import.")
-    parser.add_argument("--import", dest="import_path", help="Classeur Personnal-Budget .xlsx/.xls à importer.")
-    parser.add_argument("--export-full", dest="export_full_path", help="Exporte toute la base dans un classeur .xlsx.")
-    parser.add_argument("--import-full", dest="import_full_path", help="Importe toute la base depuis un export complet .xlsx.")
-    args = parser.parse_args()
+        help="Backend de base de données.",
+        case_sensitive=False,
+    ),
+) -> None:
+    ctx.obj = {"db_path": db_path.expanduser(), "db_backend": db_backend}
+    os.environ["BUDGET_DB_BACKEND"] = db_backend
 
-    os.environ["BUDGET_DB_BACKEND"] = args.db_backend
-    db_path = Path(args.db).expanduser()
-    if args.create:
-        create_database(db_path, args.db_backend)
-        print(f"Base créée: {database_label(db_path, args.db_backend)}")
-    elif args.db_backend == "sqlite" and not db_path.exists():
-        create_database(db_path)
-        print(f"Base créée: {db_path}")
 
-    if args.import_path:
-        workbook_path = resolve_workbook_path(Path(args.import_path).expanduser())
-        summary = import_workbook(db_path, workbook_path, args.db_backend)
-        print(f"Import terminé: {workbook_path}")
-        print(f"Feuilles ignorées: {', '.join(summary['ignored_sheets']) or '-'}")
-        print(f"Périodes: {summary['periods']}")
-        print(f"Comptes: {summary['accounts']}")
-        print(f"Transactions: {summary['transactions']}")
-        print(f"Transactions hors période importées: {summary['out_of_range_transactions']}")
-        print(f"Lignes non importées: {summary['skipped_transactions']}")
-        print(f"Intitulés: {summary['labels']}")
-        for inconsistency in summary["inconsistencies"]:
-            print(
-                f"Incohérence importée - feuille {inconsistency.sheet_name}, ligne {inconsistency.row_number}, "
-                f"période {inconsistency.period_start} -> {inconsistency.period_end}, "
-                f"date {inconsistency.tx_date}, compte {inconsistency.account}, "
-                f"intitulé {inconsistency.label}, montant {inconsistency.amount:g}: {inconsistency.reason}"
-            )
-        for problem in summary["problems"]:
-            print(
-                f"Non importé - feuille {problem.sheet_name}, ligne {problem.row_number}, "
-                f"compte {problem.account or '-'}, intitulé {problem.label or '-'}: {problem.reason}"
-            )
+def cli_context(ctx: typer.Context) -> tuple[Path, Backend]:
+    return ctx.obj["db_path"], ctx.obj["db_backend"]
 
-    if args.export_full_path:
-        export_path = Path(args.export_full_path).expanduser()
-        summary = export_full_database(db_path, export_path, args.db_backend)
-        print(f"Export complet terminé: {export_path}")
-        for table_name, count in summary.items():
-            print(f"{table_name}: {count}")
 
-    if args.import_full_path:
-        import_path = resolve_workbook_path(Path(args.import_full_path).expanduser())
-        summary = import_full_database(db_path, import_path, args.db_backend)
-        print(f"Import complet terminé: {import_path}")
-        for table_name, count in summary.items():
-            print(f"{table_name}: {count}")
+def handle_error(error: Exception) -> None:
+    console.print(f"[bold red]Erreur:[/bold red] {error}")
+    raise typer.Exit(1) from error
 
-    if not args.create and not args.import_path and not args.export_full_path and not args.import_full_path:
-        parser.print_help()
-    return 0
+
+def ensure_database(db_path: Path, backend: Backend) -> None:
+    if backend == "sqlite" and not db_path.exists():
+        create_database(db_path, backend)
+        console.print(f"[green]Base créée:[/green] {db_path}")
+
+
+@db_app.command("create")
+def create_db(ctx: typer.Context) -> None:
+    """Recrée une base vide."""
+    db_path, backend = cli_context(ctx)
+    try:
+        create_database(db_path, backend)
+        console.print(f"[green]Base créée:[/green] {database_label(db_path, backend)}")
+    except Exception as error:
+        handle_error(error)
+
+
+@workbook_app.command("import")
+def import_workbook_command(
+    ctx: typer.Context,
+    workbook_path: Path = typer.Argument(..., help="Classeur Personnal-Budget .xlsx/.xls à importer."),
+    user: str = typer.Option(database.LEGACY_USER_ID, "--user", "--user-id", help="Utilisateur cible par email ou UUID."),
+) -> None:
+    """Importe le classeur Personnal-Budget historique."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        resolved_path = resolve_workbook_path(workbook_path.expanduser())
+        user_id = resolve_user_id(db_path, backend, user)
+        summary = import_workbook(db_path, resolved_path, backend, user_id)
+        console.print(f"[green]Import terminé:[/green] {resolved_path}")
+        print_workbook_import_summary(summary)
+    except Exception as error:
+        handle_error(error)
+
+
+@export_app.command("full")
+def export_full_command(ctx: typer.Context, export_path: Path = typer.Argument(..., help="Fichier .xlsx à créer.")) -> None:
+    """Exporte toute la base, utilisateurs inclus."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        summary = export_full_database(db_path, export_path.expanduser(), backend)
+        console.print(f"[green]Export complet terminé:[/green] {export_path}")
+        print_count_summary(summary)
+    except Exception as error:
+        handle_error(error)
+
+
+@export_app.command("user")
+def export_user_command(
+    ctx: typer.Context,
+    user: str = typer.Argument(..., help="Email ou UUID utilisateur."),
+    export_path: Path = typer.Argument(..., help="Fichier .xlsx à créer."),
+) -> None:
+    """Exporte uniquement les données métier d'un utilisateur."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        summary = export_user_database(db_path, export_path.expanduser(), user, backend)
+        console.print(f"[green]Export utilisateur terminé:[/green] {export_path}")
+        print_count_summary(summary)
+    except Exception as error:
+        handle_error(error)
+
+
+@import_app.command("full")
+def import_full_command(ctx: typer.Context, import_path: Path = typer.Argument(..., help="Export complet .xlsx.")) -> None:
+    """Restaure toute la base depuis un export complet."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        resolved_path = resolve_workbook_path(import_path.expanduser())
+        summary = import_full_database(db_path, resolved_path, backend)
+        console.print(f"[green]Import complet terminé:[/green] {resolved_path}")
+        print_count_summary(summary)
+    except Exception as error:
+        handle_error(error)
+
+
+@import_app.command("user")
+def import_user_command(
+    ctx: typer.Context,
+    user: str = typer.Argument(..., help="Email ou UUID utilisateur cible."),
+    import_path: Path = typer.Argument(..., help="Export utilisateur .xlsx."),
+) -> None:
+    """Remplace les données métier d'un utilisateur depuis un export utilisateur."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        resolved_path = resolve_workbook_path(import_path.expanduser())
+        summary = import_user_database(db_path, resolved_path, user, backend)
+        console.print(f"[green]Import utilisateur terminé:[/green] {resolved_path}")
+        print_count_summary(summary)
+    except Exception as error:
+        handle_error(error)
+
+
+@users_app.command("list")
+def list_users_command(ctx: typer.Context) -> None:
+    """Liste les utilisateurs."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        print_users_table(list_users(db_path, backend))
+    except Exception as error:
+        handle_error(error)
+
+
+@users_app.command("create")
+def create_user_command(
+    ctx: typer.Context,
+    email: str = typer.Argument(..., help="Email du nouvel utilisateur."),
+    password: str = typer.Option(..., "--password", "-p", prompt=True, hide_input=True, confirmation_prompt=True),
+) -> None:
+    """Crée un utilisateur."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        user = create_user(db_path, email, password, backend)
+        console.print(f"[green]Utilisateur créé:[/green] {user['email']} ({user['id']})")
+    except Exception as error:
+        handle_error(error)
+
+
+@users_app.command("set-password")
+def set_password_command(
+    ctx: typer.Context,
+    user: str = typer.Argument(..., help="Email ou UUID utilisateur."),
+    password: str = typer.Option(..., "--password", "-p", prompt=True, hide_input=True, confirmation_prompt=True),
+) -> None:
+    """Change le mot de passe d'un utilisateur."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        set_user_password(db_path, user, password, backend)
+        console.print(f"[green]Mot de passe changé:[/green] {user}")
+    except Exception as error:
+        handle_error(error)
+
+
+@users_app.command("enable")
+def enable_user_command(ctx: typer.Context, user: str = typer.Argument(..., help="Email ou UUID utilisateur.")) -> None:
+    """Active un utilisateur."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        set_user_active(db_path, user, True, backend)
+        console.print(f"[green]Utilisateur activé:[/green] {user}")
+    except Exception as error:
+        handle_error(error)
+
+
+@users_app.command("disable")
+def disable_user_command(ctx: typer.Context, user: str = typer.Argument(..., help="Email ou UUID utilisateur.")) -> None:
+    """Désactive un utilisateur."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        set_user_active(db_path, user, False, backend)
+        console.print(f"[yellow]Utilisateur désactivé:[/yellow] {user}")
+    except Exception as error:
+        handle_error(error)
+
+
+@users_app.command("make-admin")
+def make_admin_command(ctx: typer.Context, user: str = typer.Argument(..., help="Email ou UUID utilisateur.")) -> None:
+    """Marque un utilisateur comme admin."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        set_user_admin(db_path, user, True, backend)
+        console.print(f"[green]Utilisateur admin:[/green] {user}")
+    except Exception as error:
+        handle_error(error)
+
+
+@users_app.command("revoke-admin")
+def revoke_admin_command(ctx: typer.Context, user: str = typer.Argument(..., help="Email ou UUID utilisateur.")) -> None:
+    """Retire le rôle admin d'un utilisateur."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        set_user_admin(db_path, user, False, backend)
+        console.print(f"[yellow]Utilisateur non admin:[/yellow] {user}")
+    except Exception as error:
+        handle_error(error)
 
 
 def database_label(db_path: Path, backend: str) -> str:
@@ -237,6 +425,346 @@ def import_full_database(db_path: Path, import_path: Path, backend: str = "sqlit
         return summary
 
 
+def export_user_database(db_path: Path, export_path: Path, user_key: str, backend: str = "sqlite") -> dict[str, int]:
+    export_path.parent.mkdir(parents=True, exist_ok=True)
+    with open_database(db_path, backend) as conn:
+        user = find_user(conn, user_key)
+        if user is None:
+            raise ValueError(f"Utilisateur introuvable: {user_key}")
+        sheets, summary = user_export_sheets(conn, user["id"], user["email"])
+    write_xlsx(export_path, sheets)
+    return summary
+
+
+def export_user_database_bytes(conn: sqlite3.Connection | database.MySQLConnection, user_id: str, email: str) -> bytes:
+    sheets, _summary = user_export_sheets(conn, user_id, email)
+    return xlsx_bytes(sheets)
+
+
+def user_export_sheets(
+    conn: sqlite3.Connection | database.MySQLConnection,
+    user_id: str,
+    email: str,
+) -> tuple[list[tuple[str, list[list[object]]]], dict[str, int]]:
+    sheets: list[tuple[str, list[list[object]]]] = [
+        (
+            "_meta",
+            [
+                ["key", "value"],
+                ["format", "budget-user-export"],
+                ["version", USER_EXPORT_VERSION],
+                ["exported_at", datetime.now().isoformat(timespec="seconds")],
+                ["email", email],
+            ],
+        )
+    ]
+    summary: dict[str, int] = {}
+    for table_name, columns in USER_EXPORT_TABLES:
+        rows = conn.execute(
+            f"SELECT {', '.join(columns)} FROM {table_name} WHERE user_id = ? ORDER BY id",
+            (user_id,),
+        ).fetchall()
+        sheets.append((table_name, [columns, *[[row[column] for column in columns] for row in rows]]))
+        summary[table_name] = len(rows)
+    return sheets, summary
+
+
+def import_user_database(db_path: Path, import_path: Path, user_key: str, backend: str = "sqlite") -> dict[str, int]:
+    sheets = {sheet.name: sheet for sheet in read_xlsx(import_path)}
+    validate_user_import(sheets)
+    with open_database(db_path, backend) as conn:
+        user = find_user(conn, user_key)
+        if user is None:
+            raise ValueError(f"Utilisateur introuvable: {user_key}")
+        return import_user_sheets(conn, sheets, user["id"])
+
+
+def import_user_database_bytes(
+    conn: sqlite3.Connection | database.MySQLConnection,
+    data: bytes,
+    user_id: str,
+) -> dict[str, int]:
+    with ZipFile(BytesIO(data)) as archive:
+        # Reuse the normal reader by writing through the same XML helpers on an in-memory archive.
+        shared_strings = read_shared_strings(archive)
+        workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+        rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+        relmap = {rel.attrib["Id"]: rel.attrib["Target"] for rel in rels}
+        sheets = {}
+        for sheet in workbook.find("m:sheets", XLSX_NS):
+            name = sheet.attrib["name"]
+            sheets[name] = WorkbookSheet(name, read_sheet_rows(archive, relmap[sheet.attrib[REL_ID]], shared_strings))
+    validate_user_import(sheets)
+    return import_user_sheets(conn, sheets, user_id)
+
+
+def validate_user_import(sheets: dict[str, WorkbookSheet]) -> None:
+    missing = [table_name for table_name, _columns in USER_EXPORT_TABLES if table_name not in sheets]
+    if "_meta" not in sheets:
+        missing.insert(0, "_meta")
+    if missing:
+        raise ValueError(f"Onglet(s) manquant(s) dans l'export utilisateur: {', '.join(missing)}")
+    meta = rows_to_records(sheets["_meta"])
+    meta_values = {str(row.get("key") or ""): str(row.get("value") or "") for row in meta}
+    if meta_values.get("format") != "budget-user-export":
+        raise ValueError("Le classeur n'est pas un export utilisateur Budget.")
+    if meta_values.get("version") != USER_EXPORT_VERSION:
+        raise ValueError(f"Version d'export utilisateur non supportée: {meta_values.get('version') or '-'}")
+
+
+def import_user_sheets(
+    conn: sqlite3.Connection | database.MySQLConnection,
+    sheets: dict[str, WorkbookSheet],
+    user_id: str,
+) -> dict[str, int]:
+    clear_user_data(conn, user_id)
+    id_maps: dict[str, dict[int, int]] = {"period": {}, "accounts": {}}
+    summary: dict[str, int] = {}
+
+    period_rows = full_import_rows(sheets["period"], ["id", "name", "start_date", "end_date"])
+    for old_id, name, start_date, end_date in period_rows:
+        conn.execute(
+            "INSERT INTO period(user_id, name, start_date, end_date) VALUES (?, ?, ?, ?)",
+            (user_id, name, start_date, end_date),
+        )
+        id_maps["period"][int(old_id)] = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    summary["period"] = len(period_rows)
+
+    account_rows = full_import_rows(sheets["accounts"], ["id", "name", "sort_index", "show_in_summary", "visible_if_empty"])
+    for old_id, name, sort_index, show_in_summary, visible_if_empty in account_rows:
+        conn.execute(
+            """
+            INSERT INTO accounts(user_id, name, sort_index, show_in_summary, visible_if_empty)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (user_id, name, sort_index, show_in_summary, visible_if_empty),
+        )
+        id_maps["accounts"][int(old_id)] = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    summary["accounts"] = len(account_rows)
+
+    label_rows = full_import_rows(sheets["transaction_labels"], ["id", "name"])
+    for _old_id, name in label_rows:
+        conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, name))
+    summary["transaction_labels"] = len(label_rows)
+
+    monthly_rows = full_import_rows(sheets["monthly_budget"], ["id", "day", "label", "amount"])
+    for _old_id, day, label, amount in monthly_rows:
+        conn.execute(
+            "INSERT INTO monthly_budget(user_id, day, label, amount) VALUES (?, ?, ?, ?)",
+            (user_id, day, label, amount),
+        )
+    summary["monthly_budget"] = len(monthly_rows)
+
+    balance_rows = full_import_rows(sheets["account_balances"], ["id", "period_id", "account_id", "opening"])
+    for _old_id, period_id, account_id, opening in balance_rows:
+        if int(period_id) not in id_maps["period"] or int(account_id) not in id_maps["accounts"]:
+            continue
+        conn.execute(
+            """
+            INSERT INTO account_balances(user_id, period_id, account_id, opening)
+            VALUES (?, ?, ?, ?)
+            """,
+            (user_id, id_maps["period"][int(period_id)], id_maps["accounts"][int(account_id)], opening),
+        )
+    summary["account_balances"] = len(balance_rows)
+
+    schedule_rows = full_import_rows(sheets["budget_schedule"], ["id", "period_id", "label", "amount", "status"])
+    for _old_id, period_id, label, amount, status in schedule_rows:
+        if int(period_id) not in id_maps["period"]:
+            continue
+        conn.execute(
+            """
+            INSERT INTO budget_schedule(user_id, period_id, label, amount, status)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (user_id, id_maps["period"][int(period_id)], label, amount, status),
+        )
+    summary["budget_schedule"] = len(schedule_rows)
+
+    transaction_rows = full_import_rows(
+        sheets["transactions"],
+        ["id", "period_id", "account_id", "date", "label", "amount", "sort_index", "comment", "created_at", "updated_at"],
+    )
+    for _old_id, period_id, account_id, tx_date, label, amount, sort_index, comment, created_at, updated_at in transaction_rows:
+        if int(period_id) not in id_maps["period"] or int(account_id) not in id_maps["accounts"]:
+            continue
+        conn.execute(
+            """
+            INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, sort_index, comment, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                id_maps["period"][int(period_id)],
+                id_maps["accounts"][int(account_id)],
+                tx_date,
+                label,
+                amount,
+                sort_index,
+                comment,
+                created_at,
+                updated_at,
+            ),
+        )
+    summary["transactions"] = len(transaction_rows)
+    conn.commit()
+    return summary
+
+
+def clear_user_data(conn: sqlite3.Connection | database.MySQLConnection, user_id: str) -> None:
+    for table_name in (
+        "transactions",
+        "budget_schedule",
+        "monthly_budget",
+        "account_balances",
+        "transaction_labels",
+        "accounts",
+        "period",
+    ):
+        conn.execute(f"DELETE FROM {table_name} WHERE user_id = ?", (user_id,))
+
+
+def find_user(conn: sqlite3.Connection | database.MySQLConnection, user_key: str):
+    return conn.execute(
+        "SELECT id, email FROM users WHERE id = ? OR LOWER(email) = LOWER(?)",
+        (user_key, user_key),
+    ).fetchone()
+
+
+def resolve_user_id(db_path: Path, backend: str, user_key: str) -> str:
+    if user_key == database.LEGACY_USER_ID:
+        return user_key
+    with open_database(db_path, backend) as conn:
+        user = find_user(conn, user_key)
+        if user is None:
+            raise ValueError(f"Utilisateur introuvable: {user_key}")
+        return str(user["id"])
+
+
+def create_user(db_path: Path, email: str, password: str, backend: str = "sqlite") -> dict[str, str]:
+    if len(password) < 8:
+        raise ValueError("Le mot de passe doit contenir au moins 8 caractères.")
+    user_id = str(uuid.uuid4())
+    password_hash = PasswordHelper().hash(password)
+    with open_database(db_path, backend) as conn:
+        conn.execute(
+            """
+            INSERT INTO users(id, email, hashed_password, is_active, is_superuser, is_verified, last_login)
+            VALUES (?, ?, ?, 1, 0, 0, NULL)
+            """,
+            (user_id, email.strip().lower(), password_hash),
+        )
+        database.ensure_user_data(conn, user_id)
+        conn.commit()
+    return {"id": user_id, "email": email.strip().lower()}
+
+
+def set_user_password(db_path: Path, user_key: str, password: str, backend: str = "sqlite") -> None:
+    if len(password) < 8:
+        raise ValueError("Le mot de passe doit contenir au moins 8 caractères.")
+    with open_database(db_path, backend) as conn:
+        user = find_user(conn, user_key)
+        if user is None:
+            raise ValueError(f"Utilisateur introuvable: {user_key}")
+        conn.execute("UPDATE users SET hashed_password = ? WHERE id = ?", (PasswordHelper().hash(password), user["id"]))
+        conn.commit()
+
+
+def set_user_active(db_path: Path, user_key: str, enabled: bool, backend: str = "sqlite") -> None:
+    with open_database(db_path, backend) as conn:
+        user = find_user(conn, user_key)
+        if user is None:
+            raise ValueError(f"Utilisateur introuvable: {user_key}")
+        conn.execute("UPDATE users SET is_active = ? WHERE id = ?", (1 if enabled else 0, user["id"]))
+        conn.commit()
+
+
+def set_user_admin(db_path: Path, user_key: str, enabled: bool, backend: str = "sqlite") -> None:
+    with open_database(db_path, backend) as conn:
+        user = find_user(conn, user_key)
+        if user is None:
+            raise ValueError(f"Utilisateur introuvable: {user_key}")
+        conn.execute("UPDATE users SET is_superuser = ? WHERE id = ?", (1 if enabled else 0, user["id"]))
+        conn.commit()
+
+
+def list_users(db_path: Path, backend: str = "sqlite") -> list[dict[str, object]]:
+    with open_database(db_path, backend) as conn:
+        return [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT u.id AS user,
+                       u.email,
+                       COALESCE(u.last_login, '-') AS last_connection,
+                       COUNT(DISTINCT a.id) AS account_count,
+                       COUNT(DISTINCT t.id) AS transaction_count,
+                       CASE WHEN u.is_active THEN 'enable' ELSE 'disable' END AS status,
+                       CASE WHEN u.is_superuser THEN 'yes' ELSE 'no' END AS admin
+                FROM users u
+                LEFT JOIN accounts a ON a.user_id = u.id
+                LEFT JOIN transactions t ON t.user_id = u.id
+                GROUP BY u.id, u.email, u.last_login, u.is_active, u.is_superuser
+                ORDER BY LOWER(u.email)
+                """
+            ).fetchall()
+        ]
+
+
+def print_users_table(rows: list[dict[str, object]]) -> None:
+    headers = ["User", "email", "last connection", "number compte", "nombres transaction", "enable/disable", "admin"]
+    keys = ["user", "email", "last_connection", "account_count", "transaction_count", "status", "admin"]
+    table = Table(box=box.ASCII, show_lines=False)
+    for header in headers:
+        table.add_column(header, overflow="fold")
+    for row in rows:
+        table.add_row(*["" if row.get(key) is None else str(row.get(key)) for key in keys])
+    console.print(table)
+
+
+def print_count_summary(summary: dict[str, int]) -> None:
+    table = Table(box=box.ASCII, show_header=False)
+    table.add_column("Table")
+    table.add_column("Lignes", justify="right")
+    for table_name, count in summary.items():
+        table.add_row(table_name, str(count))
+    console.print(table)
+
+
+def print_workbook_import_summary(summary: dict[str, object]) -> None:
+    table = Table(box=box.ASCII, show_header=False)
+    table.add_column("Element")
+    table.add_column("Valeur", justify="right")
+    for label, key in (
+        ("Feuilles ignorées", "ignored_sheets"),
+        ("Périodes", "periods"),
+        ("Comptes", "accounts"),
+        ("Transactions", "transactions"),
+        ("Transactions hors période importées", "out_of_range_transactions"),
+        ("Lignes non importées", "skipped_transactions"),
+        ("Intitulés", "labels"),
+    ):
+        value = summary[key]
+        if key == "ignored_sheets":
+            value = ", ".join(value) or "-"
+        table.add_row(label, str(value))
+    console.print(table)
+    for inconsistency in summary["inconsistencies"]:
+        console.print(
+            "[yellow]Incohérence importée[/yellow] - "
+            f"feuille {inconsistency.sheet_name}, ligne {inconsistency.row_number}, "
+            f"période {inconsistency.period_start} -> {inconsistency.period_end}, "
+            f"date {inconsistency.tx_date}, compte {inconsistency.account}, "
+            f"intitulé {inconsistency.label}, montant {inconsistency.amount:g}: {inconsistency.reason}"
+        )
+    for problem in summary["problems"]:
+        console.print(
+            "[red]Non importé[/red] - "
+            f"feuille {problem.sheet_name}, ligne {problem.row_number}, "
+            f"compte {problem.account or '-'}, intitulé {problem.label or '-'}: {problem.reason}"
+        )
+
+
 def validate_full_import(sheets: dict[str, WorkbookSheet]) -> None:
     missing = [table_name for table_name, _columns in FULL_EXPORT_TABLES if table_name not in sheets]
     if "_meta" not in sheets:
@@ -280,7 +808,7 @@ def import_cell_value(column: str, value: str) -> object:
     if value == "":
         return None
     if column in INTEGER_COLUMNS:
-        return int(value)
+        return int(value) if re.fullmatch(r"-?\d+", value) else value
     if column in FLOAT_COLUMNS:
         return float(value)
     return value
@@ -288,12 +816,23 @@ def import_cell_value(column: str, value: str) -> object:
 
 def write_xlsx(path: Path, sheets: list[tuple[str, list[list[object]]]]) -> None:
     with ZipFile(path, "w") as archive:
-        archive.writestr("[Content_Types].xml", xlsx_content_types(len(sheets)))
-        archive.writestr("_rels/.rels", xlsx_root_rels())
-        archive.writestr("xl/workbook.xml", xlsx_workbook(sheets))
-        archive.writestr("xl/_rels/workbook.xml.rels", xlsx_workbook_rels(len(sheets)))
-        for index, (_name, rows) in enumerate(sheets, start=1):
-            archive.writestr(f"xl/worksheets/sheet{index}.xml", xlsx_sheet(rows))
+        write_xlsx_archive(archive, sheets)
+
+
+def xlsx_bytes(sheets: list[tuple[str, list[list[object]]]]) -> bytes:
+    output = BytesIO()
+    with ZipFile(output, "w") as archive:
+        write_xlsx_archive(archive, sheets)
+    return output.getvalue()
+
+
+def write_xlsx_archive(archive: ZipFile, sheets: list[tuple[str, list[list[object]]]]) -> None:
+    archive.writestr("[Content_Types].xml", xlsx_content_types(len(sheets)))
+    archive.writestr("_rels/.rels", xlsx_root_rels())
+    archive.writestr("xl/workbook.xml", xlsx_workbook(sheets))
+    archive.writestr("xl/_rels/workbook.xml.rels", xlsx_workbook_rels(len(sheets)))
+    for index, (_name, rows) in enumerate(sheets, start=1):
+        archive.writestr(f"xl/worksheets/sheet{index}.xml", xlsx_sheet(rows))
 
 
 def xlsx_content_types(sheet_count: int) -> str:
@@ -391,7 +930,7 @@ def resolve_workbook_path(path: Path) -> Path:
     raise FileNotFoundError(f"Classeur introuvable: {path}")
 
 
-def import_workbook(db_path: Path, workbook_path: Path, backend: str = "sqlite") -> dict[str, object]:
+def import_workbook(db_path: Path, workbook_path: Path, backend: str = "sqlite", user_id: str = database.LEGACY_USER_ID) -> dict[str, object]:
     if workbook_path.suffix.lower() == ".xls":
         raise ValueError("Le format .xls binaire n'est pas supporté sans xlrd. Sauve le fichier en .xlsx.")
     sheets = read_xlsx(workbook_path)
@@ -399,24 +938,25 @@ def import_workbook(db_path: Path, workbook_path: Path, backend: str = "sqlite")
     ignored_sheets = [sheet.name for sheet in sheets if sheet.name.lower() in PERIOD_SHEET_SKIP]
 
     with open_database(db_path, backend) as conn:
+        clear_seed_data_if_empty(conn, user_id)
         account_ids: dict[str, int] = {}
         label_names: set[str] = set()
         transaction_count = 0
         inconsistencies: list[ImportInconsistency] = []
         problems = [problem for period in periods for problem in period.problems]
         for period in periods:
-            period_id = insert_period(conn, period)
+            period_id = insert_period(conn, period, user_id)
             period_start = iso_to_date(period.start_date)
             period_end = iso_to_date(period.end_date) if period.end_date else None
             for account_name in period_account_names(period):
-                account_id = get_or_create_account(conn, account_ids, account_name)
+                account_id = get_or_create_account(conn, account_ids, account_name, user_id)
                 opening = period.balances.get(account_name)
                 conn.execute(
                     """
-                    INSERT OR IGNORE INTO account_balances(period_id, account_id, opening)
-                    VALUES (?, ?, ?)
+                    INSERT OR IGNORE INTO account_balances(user_id, period_id, account_id, opening)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    (period_id, account_id, opening),
+                    (user_id, period_id, account_id, opening),
                 )
             sort_indexes: dict[int, int] = {}
             for tx in sorted(period.transactions, key=lambda item: (item.tx_date, item.row_number, item.account)):
@@ -435,31 +975,47 @@ def import_workbook(db_path: Path, workbook_path: Path, backend: str = "sqlite")
                             reason="date hors période visible dans le classeur",
                         )
                     )
-                account_id = get_or_create_account(conn, account_ids, tx.account)
+                account_id = get_or_create_account(conn, account_ids, tx.account, user_id)
                 label_names.add(tx.label)
-                conn.execute("INSERT OR IGNORE INTO transaction_labels(name) VALUES (?)", (tx.label,))
+                conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, tx.label))
                 sort_index = sort_indexes.get(account_id, 0) + 1
                 sort_indexes[account_id] = sort_index
                 conn.execute(
                     """
-                    INSERT INTO transactions(period_id, account_id, date, label, amount, sort_index)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, sort_index)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (period_id, account_id, tx.tx_date, tx.label, tx.amount, sort_index),
+                    (user_id, period_id, account_id, tx.tx_date, tx.label, tx.amount, sort_index),
                 )
                 transaction_count += 1
         conn.commit()
         return {
             "periods": len(periods),
-            "accounts": int(conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]),
+            "accounts": int(conn.execute("SELECT COUNT(*) FROM accounts WHERE user_id = ?", (user_id,)).fetchone()[0]),
             "transactions": transaction_count,
             "out_of_range_transactions": len(inconsistencies),
             "inconsistencies": inconsistencies,
             "skipped_transactions": len(problems),
             "problems": problems,
-            "labels": int(conn.execute("SELECT COUNT(*) FROM transaction_labels").fetchone()[0]),
+            "labels": int(conn.execute("SELECT COUNT(*) FROM transaction_labels WHERE user_id = ?", (user_id,)).fetchone()[0]),
             "ignored_sheets": ignored_sheets,
         }
+
+
+def clear_seed_data_if_empty(conn: sqlite3.Connection | database.MySQLConnection, user_id: str) -> None:
+    counts = conn.execute(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM transactions WHERE user_id = ?) AS transactions,
+            (SELECT COUNT(*) FROM monthly_budget WHERE user_id = ?) AS monthly_budget,
+            (SELECT COUNT(*) FROM budget_schedule WHERE user_id = ?) AS budget_schedule
+        """,
+        (user_id, user_id, user_id),
+    ).fetchone()
+    if any(int(counts[field] or 0) for field in ("transactions", "monthly_budget", "budget_schedule")):
+        return
+    for table_name in ("account_balances", "transaction_labels", "accounts", "period"):
+        conn.execute(f"DELETE FROM {table_name} WHERE user_id = ?", (user_id,))
 
 
 def read_xlsx(path: Path) -> list[WorkbookSheet]:
@@ -595,7 +1151,7 @@ def parse_balances(sheet: WorkbookSheet) -> dict[str, float | None]:
         if row_number <= 3:
             continue
         row = sheet.rows[row_number]
-        account = row.get(0, "").strip()
+        account = normalize_import_name(row.get(0, ""))
         if not account or account.lower().startswith("solde "):
             continue
         balances[account] = parse_optional_float(row.get(1, ""))
@@ -609,7 +1165,7 @@ def parse_transactions(sheet: WorkbookSheet, problems: list[ImportProblem] | Non
     transactions = []
     date_columns = [column for column, value in header.items() if normalize(value) == "date"]
     for date_col in date_columns:
-        account_from_header = title_row.get(date_col, "").strip()
+        account_from_header = normalize_import_name(title_row.get(date_col, ""))
         is_other_accounts = normalize(account_from_header).startswith("other accounts")
         if is_other_accounts:
             account_col, label_col, amount_col = date_col + 1, date_col + 2, date_col + 3
@@ -620,9 +1176,9 @@ def parse_transactions(sheet: WorkbookSheet, problems: list[ImportProblem] | Non
                 continue
             row = sheet.rows[row_number]
             raw_date = row.get(date_col, "")
-            label = row.get(label_col, "").strip()
+            label = normalize_import_name(row.get(label_col, ""))
             amount_value = row.get(amount_col, "")
-            account = row.get(account_col, "").strip() if account_col is not None else account_from_header
+            account = normalize_import_name(row.get(account_col, "")) if account_col is not None else account_from_header
             present_count = sum(1 for value in (raw_date, label, amount_value) if str(value).strip())
             if present_count == 0:
                 continue
@@ -651,10 +1207,10 @@ def parse_transactions(sheet: WorkbookSheet, problems: list[ImportProblem] | Non
     return transactions
 
 
-def insert_period(conn: sqlite3.Connection, period: PeriodImport) -> int:
+def insert_period(conn: sqlite3.Connection, period: PeriodImport, user_id: str) -> int:
     conn.execute(
-        "INSERT INTO period(name, start_date, end_date) VALUES (?, ?, ?)",
-        (period.name, period.start_date, period.end_date),
+        "INSERT INTO period(user_id, name, start_date, end_date) VALUES (?, ?, ?, ?)",
+        (user_id, period.name, period.start_date, period.end_date),
     )
     return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
@@ -665,17 +1221,19 @@ def period_account_names(period: PeriodImport) -> list[str]:
     return sorted(names)
 
 
-def get_or_create_account(conn: sqlite3.Connection, cache: dict[str, int], name: str) -> int:
-    if name in cache:
-        return cache[name]
-    row = conn.execute("SELECT id FROM accounts WHERE name = ?", (name,)).fetchone()
+def get_or_create_account(conn: sqlite3.Connection, cache: dict[str, int], name: str, user_id: str) -> int:
+    name = normalize_import_name(name)
+    cache_key = f"{user_id}:{normalize(name)}"
+    if cache_key in cache:
+        return cache[cache_key]
+    row = conn.execute("SELECT id FROM accounts WHERE user_id = ? AND LOWER(name) = LOWER(?)", (user_id, name)).fetchone()
     if row:
         account_id = int(row["id"])
     else:
-        sort_index = int(conn.execute("SELECT COALESCE(MAX(sort_index), 0) + 1 FROM accounts").fetchone()[0])
-        conn.execute("INSERT INTO accounts(name, sort_index) VALUES (?, ?)", (name, sort_index))
+        sort_index = int(conn.execute("SELECT COALESCE(MAX(sort_index), 0) + 1 FROM accounts WHERE user_id = ?", (user_id,)).fetchone()[0])
+        conn.execute("INSERT INTO accounts(user_id, name, sort_index) VALUES (?, ?, ?)", (user_id, name, sort_index))
         account_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
-    cache[name] = account_id
+    cache[cache_key] = account_id
     return account_id
 
 
@@ -708,4 +1266,4 @@ def normalize(value: object) -> str:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    app()

@@ -8,6 +8,44 @@ function resetSaveState() {
   setSaveState(document.querySelector("[data-save-state]"), "");
 }
 
+async function login(email, password) {
+  const body = new URLSearchParams();
+  body.set("username", email);
+  body.set("password", password);
+  const response = await fetch("/auth/cookie/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!response.ok) throw new Error("Email ou mot de passe invalide");
+}
+
+async function register(email, password) {
+  const response = await fetch("/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || "Création du compte impossible");
+  }
+}
+
+async function submitAuthForm(form, mode) {
+  const message = form.querySelector("[data-auth-message]");
+  const email = form.elements.email.value.trim();
+  const password = form.elements.password.value;
+  setSaveState(message, "Connexion...", false);
+  try {
+    if (mode === "register") await register(email, password);
+    await login(email, password);
+    window.location.href = "/";
+  } catch (error) {
+    setSaveState(message, error.message || "Erreur de connexion", true);
+  }
+}
+
 function parseDisplayNumber(value) {
   return Number(String(value || "").replace(/\s/g, "").replace(",", "."));
 }
@@ -1791,5 +1829,19 @@ document.addEventListener("click", async (event) => {
   if (cancelBudgetScheduleRowButton) {
     cancelBudgetScheduleRow(cancelBudgetScheduleRowButton.closest("[data-budget-schedule-new-row]"));
     return;
+  }
+});
+
+document.addEventListener("submit", async (event) => {
+  const loginForm = event.target.closest("[data-auth-login]");
+  if (loginForm) {
+    event.preventDefault();
+    await submitAuthForm(loginForm, "login");
+    return;
+  }
+  const registerForm = event.target.closest("[data-auth-register]");
+  if (registerForm) {
+    event.preventDefault();
+    await submitAuthForm(registerForm, "register");
   }
 });
