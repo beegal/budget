@@ -2,19 +2,20 @@ from __future__ import annotations
 
 import sqlite3
 
-from web_helpers import esc, format_date, money
+from web_helpers import format_date, money
 
 
-def transaction_rows(rows: list[sqlite3.Row]) -> str:
-    return "".join(transaction_row(row) for row in rows)
+def transaction_view_rows(rows: list[sqlite3.Row]) -> list[dict[str, str]]:
+    return [transaction_view_row(row) for row in rows]
 
 
-def transaction_row(row: sqlite3.Row) -> str:
+def transaction_view_row(row: sqlite3.Row) -> dict[str, str]:
     amount_class = "negative" if row["amount"] < 0 else "positive"
-    return f"""<tr>
-  <td>{esc(format_date(row["date"]))}</td>
-  <td>{esc(row["period_name"])}</td>
-  <td>{esc(row["account_name"])}</td>
-  <td>{esc(row["label"])}</td>
-  <td class="num {amount_class}">{money(row["amount"])}</td>
-</tr>"""
+    return {
+        "date": format_date(row["date"]),
+        "period_name": row["period_name"],
+        "account_name": row["account_name"],
+        "label": row["label"],
+        "amount": money(row["amount"]),
+        "amount_class": amount_class,
+    }

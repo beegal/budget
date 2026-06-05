@@ -3,9 +3,9 @@ from __future__ import annotations
 from urllib.parse import parse_qs
 
 from components.common import row_options
-from components.transactions import transaction_rows
+from components.transactions import transaction_view_rows
 from database import db
-from web_helpers import esc, layout, one, render_template
+from web_helpers import layout, one, render_template
 
 
 def page(query: str) -> bytes:
@@ -44,8 +44,8 @@ def page(query: str) -> bytes:
         "transactions.html",
         period_options=row_options(periods, period_id, "Toutes les périodes"),
         account_options=row_options(accounts, account, "Tous les comptes"),
-        search=esc(search),
-        row_html=transaction_rows(rows),
+        search=search,
+        rows=transaction_view_rows(rows),
     )
     return layout("Transactions", body)
 

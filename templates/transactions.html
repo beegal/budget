@@ -1,13 +1,23 @@
 <section class="page-title"><h1>Transactions</h1></section>
 <form class="filters" method="get">
-  <select name="period">${period_options}</select>
-  <select name="account">${account_options}</select>
-  <input name="q" value="${search}" placeholder="Recherche intitulé">
+  <select name="period">{{ period_options | safe }}</select>
+  <select name="account">{{ account_options | safe }}</select>
+  <input name="q" value="{{ search }}" placeholder="Recherche intitulé">
   <button>Filtrer</button>
 </form>
 <section class="panel">
   <table>
     <thead><tr><th>Date</th><th>Période</th><th>Compte</th><th>Intitulé</th><th class="num">Montant</th></tr></thead>
-    <tbody>${row_html}</tbody>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.date }}</td>
+        <td>{{ row.period_name }}</td>
+        <td>{{ row.account_name }}</td>
+        <td>{{ row.label }}</td>
+        <td class="num {{ row.amount_class }}">{{ row.amount }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
   </table>
 </section>
