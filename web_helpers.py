@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import sqlite3
-import string
 from datetime import date
 from pathlib import Path
 
@@ -11,21 +10,17 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from config import DATE_ORDER, MONTH_LOOKUP, NUMBER_DECIMALS, strip_accents
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-JINJA_TEMPLATES = {"layout.html", "parameters.html", "transactions.html", "imports.html"}
 JINJA_ENV = Environment(
     loader=FileSystemLoader(TEMPLATES_DIR),
     autoescape=select_autoescape(("html",)),
 )
 
 
-def render_template(name: str, **context: object) -> str:
-    template_path = TEMPLATES_DIR / name
+def render_template(template_name: str, **context: object) -> str:
+    template_path = TEMPLATES_DIR / template_name
     if not template_path.exists():
-        return f"Template {name} not found"
-    if name in JINJA_TEMPLATES:
-        return JINJA_ENV.get_template(name).render(**context)
-    template_content = template_path.read_text(encoding="utf-8")
-    return string.Template(template_content).safe_substitute(**context)
+        return f"Template {template_name} not found"
+    return JINJA_ENV.get_template(template_name).render(**context)
 
 
 def normalize_date(value: object) -> str | None:

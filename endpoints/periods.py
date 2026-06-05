@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 import sqlite3
 
-from components.periods import period_card
+from components.periods import period_card_view
 from database import db
 from web_helpers import format_date, layout, normalize_date, one, period_label, render_template
 
@@ -37,11 +37,11 @@ def page() -> bytes:
             """
         ).fetchall()
     overlap_reasons = period_warnings(periods)
-    cards = "".join(
-        period_card(row, overlap_reasons.get(row["id"]))
+    period_views = [
+        period_card_view(row, overlap_reasons.get(row["id"]))
         for row in periods
-    )
-    body = render_template("periods.html", today=format_date(date.today().isoformat()), cards=cards)
+    ]
+    body = render_template("periods.html", today=format_date(date.today().isoformat()), periods=period_views)
     return layout("Périodes", body)
 
 

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import sqlite3
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
 from components.common import panel_message
-from components.period import account_tab, budget_tab, overview, period_tabs
+from components.period import account_tab_view, budget_tab_view, overview_view, period_tabs_view
 from database import db
-from web_helpers import esc, layout, period_label, render_template
+from web_helpers import layout, period_label, render_template
 
 
 def page(period_id: int, query: str) -> bytes:
@@ -16,6 +16,13 @@ def page(period_id: int, query: str) -> bytes:
         period = conn.execute("SELECT * FROM period WHERE id = ?", (period_id,)).fetchone()
         if period is None:
             return layout("Introuvable", panel_message("Période introuvable"))
+        navigation_periods = conn.execute(
+            """
+            SELECT id, name, start_date
+            FROM period
+            ORDER BY COALESCE(start_date, ''), id
+            """
+        ).fetchall()
         accounts = period_accounts(conn, period_id)
         labels = conn.execute("SELECT id, name FROM transaction_labels ORDER BY name").fetchall()
         summary_rows = period_summary_rows(conn, period_id)
@@ -62,19 +69,42 @@ def page(period_id: int, query: str) -> bytes:
     ]
     hidden_accounts = [account for account in accounts if account not in visible_accounts]
     if active == "overview":
-        content = overview(period_id, summary_rows, balance_rows, transfer_rows)
+        content = overview_view(period_id, summary_rows, balance_rows, transfer_rows)
     elif active == "budget":
-        content = budget_tab(period_id, budget_rows, accounts, labels)
+        content = budget_tab_view(period_id, budget_rows, accounts, labels)
     else:
-        content = account_tab(period_id, period, selected_account, account_transactions, labels)
+        content = account_tab_view(period_id, period, selected_account, account_transactions, labels)
     body = render_template(
         "period.html",
-        period_label=esc(period_label(period)),
-        period_name=esc(period["name"]),
-        tabs=period_tabs(period_id, active, visible_accounts, hidden_accounts),
+        period_label=period_label(period),
+        period_name=period["name"],
+        period_nav=period_navigation_view(navigation_periods, period_id, active),
+        tabs=period_tabs_view(period_id, active, visible_accounts, hidden_accounts),
         content=content,
     )
     return layout(str(period["name"]), body)
+
+
+def period_navigation_view(periods: list[sqlite3.Row], period_id: int, active: str) -> dict[str, object]:
+    current_index = next((index for index, row in enumerate(periods) if row["id"] == period_id), None)
+    if current_index is None:
+        return {"next": None, "previous": None}
+    next_period = periods[current_index + 1] if current_index + 1 < len(periods) else None
+    previous_period = periods[current_index - 1] if current_index > 0 else None
+    return {
+        "next": period_navigation_link(next_period, active),
+        "previous": period_navigation_link(previous_period, active),
+    }
+
+
+def period_navigation_link(period: sqlite3.Row | None, active: str) -> dict[str, object] | None:
+    if period is None:
+        return None
+    query = "" if active == "overview" else f"?{urlencode({'account': active})}"
+    return {
+        "name": period["name"],
+        "href": f"/period/{period['id']}{query}",
+    }
 
 
 def period_accounts(conn: sqlite3.Connection, period_id: int) -> list[sqlite3.Row]:

@@ -1,6 +1,5 @@
 <section class="page-title">
   <div>
-    <p class="eyebrow">Application budget générique</p>
     <h1>Périodes</h1>
   </div>
   <span class="save-state" data-save-state></span>
@@ -12,7 +11,7 @@
       <input name="name" placeholder="Nom de la période" required>
       <div class="period-create-dates">
         <span>du</span>
-        <input name="start_date" value="${today}" placeholder="26 mars 2026" required>
+        <input name="start_date" value="{{ today }}" placeholder="26 mars 2026" required>
         <span>-&gt;</span>
         <input name="end_date" value="en cours" placeholder="en cours">
       </div>
@@ -22,5 +21,39 @@
       </div>
     </form>
   </article>
-  ${cards}
+  {% for period in periods %}
+  <article class="card period-card{{ period.warning_class }}">
+    <div class="period-card-head">
+      <div class="period-range" data-period-range data-id="{{ period.id }}">
+        <button type="button" class="period-range-display muted" data-period-range-display title="Modifier les dates">{{ period.period_label }}</button>
+        <div class="period-range-edit" data-period-range-edit hidden>
+          <span>du</span>
+          <input value="{{ period.start_display }}" data-period-start data-original="{{ period.start_display }}" placeholder="26/03/2026">
+          <span>-&gt;</span>
+          <input value="{{ period.end_date }}" data-period-end data-original="{{ period.end_date }}" placeholder="26/04/2026">
+          <button type="button" class="row-confirm" data-confirm-period>V</button>
+          <button type="button" class="row-cancel" data-cancel-period>X</button>
+        </div>
+      </div>
+      {% if period.warning %}
+      <span class="period-warning-icon" title="{{ period.warning }}" aria-label="{{ period.warning }}">i</span>
+      {% endif %}
+      <button type="button" class="period-delete-button" {% if period.can_delete %}data-delete-period data-id="{{ period.id }}"{% else %}disabled aria-disabled="true"{% endif %} title="{{ period.delete_title }}" aria-label="{{ period.delete_title }}">{{ period.trash_icon | safe }}</button>
+    </div>
+    <div class="period-name" data-period-name data-id="{{ period.id }}">
+      <button type="button" class="period-name-display" data-period-name-display title="Modifier le nom">{{ period.name }}</button>
+      <div class="period-name-edit" data-period-name-edit hidden>
+        <input value="{{ period.name }}" data-period-name-input data-original="{{ period.name }}" placeholder="Nom de la période">
+        <button type="button" class="row-confirm" data-confirm-period-name>V</button>
+        <button type="button" class="row-cancel" data-cancel-period-name>X</button>
+      </div>
+    </div>
+    <dl class="metrics">
+      <div><dt>Entrées</dt><dd class="positive">{{ period.income }}</dd></div>
+      <div><dt>Sorties</dt><dd class="negative">{{ period.expense }}</dd></div>
+      <div><dt>Net</dt><dd>{{ period.net }}</dd></div>
+    </dl>
+    <a class="button ghost" href="/period/{{ period.id }}">Ouvrir</a>
+  </article>
+  {% endfor %}
 </section>

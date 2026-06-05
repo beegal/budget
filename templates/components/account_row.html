@@ -1,0 +1,9 @@
+<tr data-settings-row data-kind="account" data-id="{{ row_id }}" draggable="false">
+  <td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-account-drag-handle title="Déplacer">↕</button><span class="row-index-value" data-account-index>{{ sort_index }}</span></td>
+  <td><input value="{{ name }}" data-setting-value data-original="{{ name }}" autocomplete="off"></td>
+  <td class="center-cell"><input type="checkbox" data-account-summary data-id="{{ row_id }}"{% if show_in_summary %} checked{% endif %}></td>
+  <td class="center-cell"><input type="checkbox" data-account-visible-if-empty data-id="{{ row_id }}"{% if visible_if_empty %} checked{% endif %}></td>
+  <td class="row-actions">
+    {{ actions | safe }}
+  </td>
+</tr>

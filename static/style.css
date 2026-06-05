@@ -69,10 +69,18 @@ main {
 .hero,
 .page-title {
   align-items: center;
+  border-bottom: 1px solid var(--line);
   display: flex;
   gap: 20px;
-  justify-content: space-between;
+  justify-content: center;
   margin-bottom: 22px;
+  padding-bottom: 18px;
+  position: relative;
+}
+
+.page-title > .button {
+  position: absolute;
+  right: 0;
 }
 
 .eyebrow,
@@ -80,6 +88,51 @@ main {
   color: var(--muted);
   font-size: 13px;
   margin: 0 0 6px;
+}
+
+.period-title-block {
+  min-width: 0;
+}
+
+.period-title-navigation {
+  align-items: baseline;
+  display: grid;
+  gap: 14px 18px;
+  grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr);
+  justify-items: center;
+}
+
+.period-neighbor {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+  min-height: 1em;
+  overflow: hidden;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.period-neighbor:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.period-neighbor-next {
+  text-align: right;
+}
+
+.period-neighbor-previous {
+  text-align: left;
+}
+
+.period-date-label {
+  color: var(--muted);
+  font-size: 14px;
+  grid-column: 2;
+  margin: -6px 0 0;
+  text-align: center;
+  white-space: nowrap;
 }
 
 h1,
@@ -1507,14 +1560,39 @@ td.editable:focus {
 
 @media (max-width: 760px) {
   .topbar,
-  .hero,
-  .page-title {
+  .hero {
     align-items: flex-start;
     flex-direction: column;
   }
 
+  .page-title {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-items: start;
+  }
+
+  .page-title > .button {
+    position: static;
+  }
+
   .filters {
     grid-template-columns: 1fr;
+  }
+
+  .period-title-navigation {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .period-date-label {
+    grid-column: auto;
+    text-align: left;
+  }
+
+  .period-neighbor,
+  .period-neighbor-next,
+  .period-neighbor-previous {
+    text-align: left;
   }
 
   .inline-form,

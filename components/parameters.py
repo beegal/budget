@@ -1,25 +1,23 @@
 from __future__ import annotations
 
 from components.common import label_picker, row_action_buttons
-from web_helpers import esc, format_number
+from web_helpers import format_number, render_template
 
 
 def settings_row(kind: str, row_id: int, name: str) -> str:
     if kind == "label":
         group_name, subcategory = split_label_name(name)
-        return f"""<tr data-settings-row data-kind="{kind}" data-id="{row_id}">
-  <td><input value="{esc(group_name)}" data-setting-value data-setting-part="group" data-original="{esc(group_name)}" autocomplete="off"></td>
-  <td><input value="{esc(subcategory)}" data-setting-value data-setting-part="subcategory" data-original="{esc(subcategory)}" autocomplete="off"></td>
-  <td class="row-actions">
-    {row_action_buttons("setting")}
-  </td>
-</tr>"""
-    return f"""<tr data-settings-row data-kind="{kind}" data-id="{row_id}">
-  <td><input value="{esc(name)}" data-setting-value data-original="{esc(name)}" autocomplete="off"></td>
-  <td class="row-actions">
-    {row_action_buttons("setting")}
-  </td>
-</tr>"""
+    else:
+        group_name, subcategory = "", ""
+    return render_template(
+        "components/settings_row.html",
+        kind=kind,
+        row_id=row_id,
+        name=name,
+        group_name=group_name,
+        subcategory=subcategory,
+        actions=row_action_buttons("setting"),
+    )
 
 
 def split_label_name(name: str) -> tuple[str, str]:
@@ -30,34 +28,30 @@ def split_label_name(name: str) -> tuple[str, str]:
 
 
 def account_row(row_id: int, name: str, sort_index: int, show_in_summary: bool, visible_if_empty: bool) -> str:
-    summary_checked = " checked" if show_in_summary else ""
-    empty_checked = " checked" if visible_if_empty else ""
-    return f"""<tr data-settings-row data-kind="account" data-id="{row_id}" draggable="false">
-  <td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-account-drag-handle title="Déplacer">↕</button><span class="row-index-value" data-account-index>{sort_index}</span></td>
-  <td><input value="{esc(name)}" data-setting-value data-original="{esc(name)}" autocomplete="off"></td>
-  <td class="center-cell"><input type="checkbox" data-account-summary data-id="{row_id}"{summary_checked}></td>
-  <td class="center-cell"><input type="checkbox" data-account-visible-if-empty data-id="{row_id}"{empty_checked}></td>
-  <td class="row-actions">
-    {row_action_buttons("setting")}
-  </td>
-</tr>"""
+    return render_template(
+        "components/account_row.html",
+        row_id=row_id,
+        name=name,
+        sort_index=sort_index,
+        show_in_summary=show_in_summary,
+        visible_if_empty=visible_if_empty,
+        actions=row_action_buttons("setting"),
+    )
 
 
 def monthly_budget_row(row_id: int, day: int, label: str, amount: float) -> str:
     amount_class = "amount-positive" if amount > 0 else "amount-negative" if amount < 0 else ""
     amount_display = format_number(amount)
-    return f"""<tr class="{amount_class}" data-budget-row data-id="{row_id}">
-  <td><input data-budget-field="day" value="{day}" data-original="{day}" inputmode="numeric"></td>
-  <td>{label_picker(label, 'data-budget-field="label"')}</td>
-  <td><input data-budget-field="amount" value="{esc(amount_display)}" data-original="{esc(amount_display)}" inputmode="decimal"></td>
-  <td class="row-actions">
-    {row_action_buttons("budget")}
-  </td>
-</tr>"""
+    return render_template(
+        "components/monthly_budget_row.html",
+        row_id=row_id,
+        day=day,
+        amount_class=amount_class,
+        amount_display=amount_display,
+        label_picker=label_picker(label, 'data-budget-field="label"'),
+        actions=row_action_buttons("budget"),
+    )
 
 
 def empty_monthly_budget_row() -> str:
-    return """<tr data-empty-budget-row>
-  <td colspan="3" class="muted">Aucune entrée.</td>
-  <td class="row-actions"></td>
-</tr>"""
+    return render_template("components/empty_monthly_budget_row.html")
