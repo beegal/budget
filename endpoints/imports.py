@@ -11,7 +11,7 @@ from components.imports import validation_view
 from config import DATE_FORMAT
 from database import db
 from endpoints import api
-from web_helpers import format_date, layout, period_label, render_template
+from web_helpers import format_date, layout, parse_month, period_label, render_template
 
 
 DATE_FORMAT_LABELS = {
@@ -109,7 +109,7 @@ def parse_import_year(value: str) -> int:
     return year
 
 
-def normalize_import_date(value: object, date_format: str = "dmy") -> str:
+def normalize_import_date(value: object, date_format: str = "dmy", default_year: int | None = None) -> str:
     raw = str(value or "").strip()
     if not raw:
         raise ValueError("Date obligatoire")
@@ -119,30 +119,68 @@ def normalize_import_date(value: object, date_format: str = "dmy") -> str:
     for separator in ("-", ".", " "):
         normalized = normalized.replace(separator, "/")
     parts = [part.strip() for part in normalized.split("/") if part.strip()]
-    if len(parts) != 3:
+    if len(parts) not in {2, 3}:
         raise ValueError(f"Date invalide pour le format {DATE_FORMAT_LABELS[date_format]}: {value}")
     try:
-        if date_format == "ymd":
+        if len(parts) == 2:
+            year = default_year or date.today().year
+            day, month = parse_import_day_month(parts, date_format)
+        elif date_format == "ymd":
             year = parse_import_year(parts[0])
-            month = int(parts[1])
+            month = parse_month(parts[1])
             day = int(parts[2])
         elif date_format == "mdy":
-            month = int(parts[0])
+            month = parse_month(parts[0])
             day = int(parts[1])
             year = parse_import_year(parts[2])
         else:
             day = int(parts[0])
-            month = int(parts[1])
+            month = parse_month(parts[1])
             year = parse_import_year(parts[2])
         return date(year, month, day).isoformat()
     except ValueError:
         raise ValueError(f"Date invalide pour le format {DATE_FORMAT_LABELS[date_format]}: {value}")
 
 
+def parse_import_day_month(parts: list[str], date_format: str) -> tuple[int, int]:
+    try:
+        first_month = parse_month(parts[0])
+        first_is_month = not parts[0].strip().isdigit() or first_month <= 12
+    except ValueError:
+        first_month = 0
+        first_is_month = False
+    try:
+        second_month = parse_month(parts[1])
+        second_is_month = not parts[1].strip().isdigit() or second_month <= 12
+    except ValueError:
+        second_month = 0
+        second_is_month = False
+
+    if first_is_month and not parts[0].strip().isdigit():
+        return int(parts[1]), first_month
+    if second_is_month and not parts[1].strip().isdigit():
+        return int(parts[0]), second_month
+    if date_format == "mdy":
+        return int(parts[1]), int(parts[0])
+    return int(parts[0]), int(parts[1])
+
+
+def import_year_candidates(conn: sqlite3.Connection, period_id: int) -> list[int]:
+    period = conn.execute("SELECT start_date, end_date FROM period WHERE id = ?", (period_id,)).fetchone()
+    years = []
+    for field in ("start_date", "end_date"):
+        raw = period[field] if period else ""
+        if raw:
+            years.append(date.fromisoformat(raw).year)
+    years.append(date.today().year)
+    return list(dict.fromkeys(years))
+
+
 def validate_csv(period_id: int, raw_csv: str, date_format: str = "dmy", format_value: str = "csv_header") -> dict[str, object]:
     parsed_rows = []
     labels_to_create = set()
     with db() as conn:
+        year_candidates = import_year_candidates(conn, period_id)
         existing_labels = {
             row["name"].strip().lower()
             for row in conn.execute("SELECT name FROM transaction_labels").fetchall()
@@ -156,8 +194,17 @@ def validate_csv(period_id: int, raw_csv: str, date_format: str = "dmy", format_
             errors = []
             normalized_date = date_value
             try:
-                normalized_date = normalize_import_date(date_value, date_format)
-                api.validate_transaction_date(conn, period_id, normalized_date)
+                last_error = None
+                for year in year_candidates:
+                    try:
+                        normalized_date = normalize_import_date(date_value, date_format, year)
+                        api.validate_transaction_date(conn, period_id, normalized_date)
+                        last_error = None
+                        break
+                    except ValueError as error:
+                        last_error = error
+                if last_error:
+                    raise last_error
             except ValueError as error:
                 errors.append(str(error))
             try:
