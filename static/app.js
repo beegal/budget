@@ -1165,7 +1165,7 @@ function focusSettingDeleteAction(row) {
 function labelPickerHtml(value, attrs) {
   return `<div class="label-picker" data-label-picker>
     <div class="label-picker-row">
-      <input value="${escapeHtml(value)}" data-original="${escapeHtml(value)}" autocomplete="off" placeholder="Intitulé" ${attrs} data-label-input>
+      <input value="${escapeHtml(value)}" data-original="${escapeHtml(value)}" autocomplete="off" placeholder="Intitulé, groupage avant -" ${attrs} data-label-input>
       <button class="label-add" type="button" data-create-label hidden>+</button>
     </div>
     <div class="label-suggestions" data-label-suggestions hidden></div>
@@ -1305,10 +1305,29 @@ function addPeriodFilterTag(filter, value) {
   return true;
 }
 
-function submitPeriodFilterIfNeeded(filter) {
+function markPeriodFilterDirty(filter) {
+  if (!filter?.closest("form[data-period-auto-submit]")) return;
+  filter.dataset.periodFilterDirty = "true";
+}
+
+function submitPeriodFilterIfDirty(filter) {
   const form = filter?.closest("form[data-period-auto-submit]");
-  if (!form) return;
+  if (!form || filter.dataset.periodFilterDirty !== "true") return;
+  delete filter.dataset.periodFilterDirty;
   submitFilterForm(form);
+}
+
+function closePeriodFilter(filter) {
+  const menu = filter?.querySelector("[data-period-filter-menu]");
+  if (!menu || menu.hidden) return;
+  menu.hidden = true;
+  submitPeriodFilterIfDirty(filter);
+}
+
+function closeOpenPeriodFilters(exceptFilter = null) {
+  document.querySelectorAll("[data-period-filter]").forEach((filter) => {
+    if (filter !== exceptFilter) closePeriodFilter(filter);
+  });
 }
 
 function submitFilterForm(form) {
@@ -1351,7 +1370,9 @@ document.addEventListener("focusin", (event) => {
   if (input) input.dataset.before = input.value.trim();
   const periodTagInput = event.target.closest("[data-period-tag-input]");
   if (periodTagInput) {
-    const menu = periodTagInput.closest("[data-period-filter]")?.querySelector("[data-period-filter-menu]");
+    const filter = periodTagInput.closest("[data-period-filter]");
+    closeOpenPeriodFilters(filter);
+    const menu = filter?.querySelector("[data-period-filter-menu]");
     if (menu) menu.hidden = false;
   }
   const transactionRow = event.target.closest("[data-transaction-table] tr[data-transaction-id]");
@@ -1426,7 +1447,7 @@ document.addEventListener("keydown", async (event) => {
     const added = addPeriodFilterTag(filter, periodTagInput.value);
     if (added) {
       periodTagInput.value = "";
-      submitPeriodFilterIfNeeded(filter);
+      markPeriodFilterDirty(filter);
     }
     return;
   }
@@ -1595,7 +1616,7 @@ document.addEventListener("change", (event) => {
   if (periodCheckbox) {
     const filter = periodCheckbox.closest("[data-period-filter]");
     syncPeriodFilter(filter);
-    submitPeriodFilterIfNeeded(filter);
+    markPeriodFilterDirty(filter);
   }
 
   const autoSubmitSelect = event.target.closest("form[data-filter-auto-submit] select");
@@ -1630,7 +1651,7 @@ document.addEventListener("input", (event) => {
     periodTagInput.value = parts.pop() || "";
     const filter = periodTagInput.closest("[data-period-filter]");
     const added = parts.map((part) => addPeriodFilterTag(filter, part)).some(Boolean);
-    if (added) submitPeriodFilterIfNeeded(filter);
+    if (added) markPeriodFilterDirty(filter);
   }
   const budgetScheduleInput = event.target.closest("[data-budget-schedule-field]");
   if (budgetScheduleInput) budgetScheduleInput.closest("tr")?.classList.add("dirty");
@@ -1721,17 +1742,20 @@ document.addEventListener("click", async (event) => {
   if (!event.target.closest("[data-account-merge-list], [data-merge-account]")) {
     closeAccountMergeLists();
   }
-  if (!event.target.closest("[data-period-filter]")) {
-    document.querySelectorAll("[data-period-filter-menu]").forEach((menu) => {
-      menu.hidden = true;
-    });
-  }
-
   const periodFilterToggle = event.target.closest("[data-period-filter-toggle]");
   if (periodFilterToggle) {
-    const menu = periodFilterToggle.closest("[data-period-filter]")?.querySelector("[data-period-filter-menu]");
-    if (menu) menu.hidden = !menu.hidden;
+    const filter = periodFilterToggle.closest("[data-period-filter]");
+    const menu = filter?.querySelector("[data-period-filter-menu]");
+    if (menu && !menu.hidden) closePeriodFilter(filter);
+    else {
+      closeOpenPeriodFilters(filter);
+      if (menu) menu.hidden = false;
+    }
     return;
+  }
+
+  if (!event.target.closest("[data-period-filter]")) {
+    closeOpenPeriodFilters();
   }
 
   const periodFilterAll = event.target.closest("[data-period-filter-all]");
@@ -1741,7 +1765,7 @@ document.addEventListener("click", async (event) => {
       checkbox.checked = true;
     });
     syncPeriodFilter(filter, "all");
-    submitPeriodFilterIfNeeded(filter);
+    markPeriodFilterDirty(filter);
     return;
   }
 
@@ -1752,7 +1776,7 @@ document.addEventListener("click", async (event) => {
       checkbox.checked = false;
     });
     syncPeriodFilter(filter);
-    submitPeriodFilterIfNeeded(filter);
+    markPeriodFilterDirty(filter);
     return;
   }
 
@@ -1763,7 +1787,7 @@ document.addEventListener("click", async (event) => {
     const checkbox = filter?.querySelector(`[data-period-filter-checkbox][value="${CSS.escape(tag?.dataset.periodTag || "")}"]`);
     if (checkbox) checkbox.checked = false;
     syncPeriodFilter(filter);
-    submitPeriodFilterIfNeeded(filter);
+    markPeriodFilterDirty(filter);
     return;
   }
 

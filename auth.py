@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -17,7 +18,7 @@ import database
 
 
 ROOT = Path(__file__).resolve().parent
-AUTH_SECRET = os.environ.get("BUDGET_AUTH_SECRET", "change-this-budget-auth-secret")
+AUTH_SECRET = os.environ.get("BUDGET_AUTH_SECRET") or secrets.token_urlsafe(48)
 
 
 class Base(DeclarativeBase):
