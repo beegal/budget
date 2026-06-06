@@ -1125,6 +1125,12 @@ select {
   grid-template-columns: repeat(2, minmax(320px, 1fr));
 }
 
+.settings-help {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 2px 0 10px;
+}
+
 .data-portability-panel {
   align-items: center;
   background: transparent;

@@ -1165,7 +1165,7 @@ function focusSettingDeleteAction(row) {
 function labelPickerHtml(value, attrs) {
   return `<div class="label-picker" data-label-picker>
     <div class="label-picker-row">
-      <input value="${escapeHtml(value)}" data-original="${escapeHtml(value)}" autocomplete="off" placeholder="Intitulé, groupage avant -" ${attrs} data-label-input>
+      <input value="${escapeHtml(value)}" data-original="${escapeHtml(value)}" autocomplete="off" placeholder="Ex: Courses - Supermarché" ${attrs} data-label-input>
       <button class="label-add" type="button" data-create-label hidden>+</button>
     </div>
     <div class="label-suggestions" data-label-suggestions hidden></div>
