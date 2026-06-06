@@ -12,9 +12,11 @@ Le projet reste volontairement simple: une application FastAPI locale, une base 
 - éditer les tableaux directement avec `Enter` pour valider et `Esc` pour annuler;
 - réordonner les comptes et transactions par drag and drop;
 - consulter une synthèse des soldes, entrées, sorties et transferts;
+- consulter une synthèse globale multi-périodes par intitulé;
 - créer automatiquement un onglet `Budget` par période à partir du budget mensuel;
 - instancier une entrée planifiée du budget dans un compte réel;
 - importer des transactions CSV dans un compte;
+- filtrer les transactions par périodes, comptes et intitulés avec rafraîchissement réactif;
 - masquer les comptes vides dans les périodes, avec ajout ponctuel via le bouton `+` des tabs.
 
 ## Données
@@ -58,7 +60,7 @@ L'application est multi-user via FastAPI Users avec une authentification par coo
 - `/register`: registration rapide par email et mot de passe;
 - `/login`: connexion;
 - `/logout`: suppression du cookie de session.
-- `/admin`: interface réservée aux admins pour lister les utilisateurs, changer un mot de passe, activer/désactiver un compte et attribuer/retirer le rôle admin.
+- `/admin`: interface réservée aux admins pour lister les utilisateurs, créer un utilisateur, changer un mot de passe, activer/désactiver un compte et attribuer/retirer le rôle admin.
 
 Chaque table métier contient `user_id` et toutes les lectures/écritures filtrent sur l'utilisateur connecté. Les données historiques sans utilisateur sont marquées temporairement avec un identifiant legacy, puis adoptées par le premier utilisateur qui s'enregistre.
 
@@ -128,6 +130,8 @@ BUDGET_AUTH_LIFETIME=2592000
 
 En production, `BUDGET_AUTH_SECRET` doit être une valeur longue et privée. Mets `BUDGET_AUTH_COOKIE_SECURE=1` derrière HTTPS.
 
+Si `BUDGET_AUTH_SECRET` n'est pas défini, l'application génère un secret aléatoire non prédictible au démarrage. C'est plus sûr qu'une valeur par défaut hardcodée, mais les cookies existants deviennent invalides après un redémarrage. Pour conserver les sessions entre redémarrages, configure une valeur stable dans l'environnement.
+
 Pour créer la base et l'utilisateur MySQL avec le CLI:
 
 ```bash
@@ -167,6 +171,7 @@ La base MySQL est créée/ajustée avec `CHARACTER SET utf8mb4 COLLATE utf8mb4_b
 - `/period/<id>`: affiche une période avec synthèse, onglet `Budget`, puis les comptes visibles.
 - `/period/<id>/import?account=<id>`: importe des transactions CSV pour un compte.
 - `/transactions`: affiche une vue filtrable des transactions.
+- `/summary`: affiche une synthèse globale multi-périodes des entrées/sorties par intitulé.
 
 ## Notes UI
 
@@ -187,6 +192,21 @@ Dans les comptes:
 - les transactions peuvent être ajoutées, validées, annulées, supprimées ou réordonnées;
 - le bouton de suppression globale retire toutes les lignes du compte pour la période affichée;
 - le sélecteur d'intitulés est partagé avec le budget mensuel et propose la création d'un intitulé manquant.
+- le groupage des intitulés se fait sur la partie avant le séparateur `-`; les placeholders le rappellent dans les champs concernés.
+
+Dans les transactions globales:
+
+- les périodes et comptes utilisent un sélecteur à tags avec dropdown à checkboxes;
+- une sélection vide signifie toutes les périodes ou tous les comptes;
+- les sélections sont appliquées quand le dropdown est fermé, ce qui permet de cocher plusieurs valeurs sans refresh intermédiaire;
+- le filtre d'intitulé utilise le même dropdown que les transactions de compte;
+- changer compte ou intitulé rafraîchit la table;
+- la ligne de total affiche débit, crédit et total net.
+
+Dans la synthèse globale:
+
+- les périodes utilisent le même sélecteur à tags que les transactions;
+- cliquer sur un intitulé ouvre `/transactions` avec les périodes et l'intitulé préfiltrés.
 
 L'onglet `Budget` est spécial:
 
@@ -227,7 +247,11 @@ Validation:
 - factorisation du picker d'intitulés et des boutons d'action;
 - nettoyage des tables et colonnes non utilisées;
 - ajout d'une migration de schéma pour isoler les données par utilisateur;
-- ajout d'un build Docker Alpine Python et d'un workflow GitHub Actions.
+- ajout d'un build Docker Alpine Python et d'un workflow GitHub Actions;
+- ajout d'une page Synthèse globale;
+- ajout de filtres réactifs multi-périodes/multi-comptes dans Transactions;
+- ajout de la création inline d'utilisateurs dans l'administration;
+- secret d'authentification aléatoire au démarrage si `BUDGET_AUTH_SECRET` est absent.
 
 ## Structure
 
@@ -259,12 +283,15 @@ Validation:
 │   └── budget.sqlite3
 ├── endpoints/
 │   ├── __init__.py
+│   ├── admin.py
 │   ├── api.py
+│   ├── filters.py
 │   ├── imports.py
 │   ├── parameters.py
 │   ├── period.py
 │   ├── periods.py
 │   ├── static_files.py
+│   ├── summary.py
 │   └── transactions.py
 ├── static/
     ├── app.js
@@ -275,6 +302,7 @@ Validation:
     ├── parameters.html
     ├── period.html
     ├── periods.html
+    ├── summary.html
     └── transactions.html
 ```
 
