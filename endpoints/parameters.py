@@ -4,7 +4,7 @@ import json
 
 from components.parameters import account_row, empty_monthly_budget_row, monthly_budget_row, settings_row
 from database import db
-from web_helpers import layout, one, render_template
+from web_helpers import one, render_template, user_layout
 
 
 def page(user_id: str) -> bytes:
@@ -57,7 +57,7 @@ def page(user_id: str) -> bytes:
         label_rows=label_rows,
         budget_html=budget_html,
     )
-    return layout("Paramètres", body)
+    return user_layout("Paramètres", body, user_id)
 
 
 def create_account(data: dict[str, list[str]], user_id: str) -> str:

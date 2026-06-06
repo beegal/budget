@@ -98,7 +98,7 @@
       <tbody>
         {% for row in content.summary_rows %}
         <tr>
-          <td>{{ row.label_group }}</td>
+          <td><a href="{{ row.href }}">{{ row.label_group }}</a></td>
           <td class="num positive">{{ row.income }}</td>
           <td class="num negative">{{ row.expense }}</td>
           <td class="num {{ row.net_class }}">{{ row.net }}</td>

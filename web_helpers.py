@@ -4,6 +4,7 @@ import html
 import sqlite3
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlencode
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -123,5 +124,24 @@ def period_label(row: sqlite3.Row) -> str:
     return "Période libre"
 
 
+def transaction_filter_url(period_ids: list[int], label: str) -> str:
+    query = {"periods": ",".join(str(period_id) for period_id in period_ids), "q": label}
+    return f"/transactions?{urlencode(query)}"
+
+
 def layout(title: str, body: str) -> bytes:
-    return render_template("layout.html", title=title, body=body).encode("utf-8")
+    return render_template("layout.html", title=title, body=body, authenticated=False, show_admin=False).encode("utf-8")
+
+
+def user_layout(title: str, body: str, user_id: str) -> bytes:
+    from database import db
+
+    with db() as conn:
+        row = conn.execute("SELECT is_superuser FROM users WHERE id = ?", (user_id,)).fetchone()
+    return render_template(
+        "layout.html",
+        title=title,
+        body=body,
+        authenticated=True,
+        show_admin=bool(row and row["is_superuser"]),
+    ).encode("utf-8")

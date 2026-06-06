@@ -772,6 +772,148 @@ button:hover {
   margin-bottom: 16px;
 }
 
+.transaction-filters {
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+}
+
+.transaction-filters .period-selector-filter {
+  grid-column: 1 / -1;
+}
+
+.filter-refresh-button {
+  align-self: start;
+  min-width: 38px;
+  padding: 8px 10px;
+}
+
+.transaction-filters .period-filter-toggle,
+.summary-filters .period-filter-toggle {
+  align-self: start;
+  font-size: 0;
+  min-width: 38px;
+  padding: 8px 10px;
+}
+
+.transaction-filters .period-filter-toggle::before,
+.summary-filters .period-filter-toggle::before {
+  content: "▾";
+  font-size: 16px;
+  line-height: 1;
+}
+
+.summary-filters {
+  grid-template-columns: minmax(280px, 1fr) auto;
+}
+
+.summary-refresh-button {
+  min-width: 38px;
+  padding: 8px 10px;
+}
+
+.period-multi-filter {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  position: relative;
+}
+
+.period-tag-box {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 38px;
+  padding: 4px 6px;
+}
+
+.period-tag-box input {
+  border: 0;
+  flex: 1 1 90px;
+  min-height: 26px;
+  min-width: 72px;
+  padding: 2px;
+}
+
+.period-tag-box input:focus {
+  outline: 0;
+}
+
+.period-filter-tag {
+  align-items: center;
+  background: #e8f3f6;
+  border: 1px solid #cbe2e8;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 4px;
+  padding: 3px 6px 3px 8px;
+}
+
+.period-filter-tag button {
+  background: transparent;
+  color: var(--accent-strong);
+  min-height: 0;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.period-filter-toggle {
+  min-width: 94px;
+  padding: 8px 10px;
+}
+
+.period-filter-menu {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  box-shadow: 0 12px 24px rgba(16, 24, 40, .14);
+  display: grid;
+  gap: 6px;
+  left: 0;
+  max-height: 280px;
+  min-width: 260px;
+  overflow-y: auto;
+  padding: 8px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 6;
+}
+
+.period-filter-menu label,
+.period-filter-option {
+  align-items: center;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text);
+  display: flex;
+  flex-direction: row;
+  font-size: 13px;
+  font-weight: 500;
+  gap: 7px;
+  justify-content: flex-start;
+  min-height: auto;
+  padding: 4px 6px;
+  text-align: left;
+  width: 100%;
+}
+
+.period-filter-option:hover,
+.period-filter-menu label:hover {
+  background: #edf3f5;
+  color: var(--text);
+}
+
+.period-filter-menu input {
+  min-height: auto;
+  width: auto;
+}
+
 label {
   color: var(--muted);
   display: grid;
@@ -985,18 +1127,23 @@ select {
 
 .data-portability-panel {
   align-items: center;
+  background: transparent;
+  box-shadow: none;
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-top: 18px;
+  padding: 12px 14px;
 }
 
 .data-portability-panel h2 {
+  font-size: 15px;
   margin-bottom: 4px;
 }
 
 .data-portability-panel p {
   color: var(--muted);
+  font-size: 12px;
   margin: 0;
 }
 
@@ -1018,6 +1165,10 @@ select {
 
 .admin-panel h2 {
   margin-bottom: 12px;
+}
+
+.admin-error {
+  margin: 0 0 12px;
 }
 
 .admin-table th,
@@ -1046,6 +1197,17 @@ select {
   min-height: 0;
   min-width: 180px;
   padding: 5px 7px;
+}
+
+.admin-table tfoot input[type="email"],
+.admin-table tfoot input[type="password"] {
+  min-height: 32px;
+}
+
+.admin-table tfoot .row-confirm,
+.admin-table tfoot .row-cancel {
+  min-width: 32px;
+  padding: 6px 8px;
 }
 
 .wide {
@@ -1133,6 +1295,12 @@ th {
   border-top: 2px solid var(--line);
   color: var(--text);
   font-size: 14px;
+}
+
+.transaction-total-cell {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
 }
 
 .num {

@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 import auth
 import budget_cli
 from database import db
-from endpoints import admin, api, imports, parameters, period, periods, static_files, transactions
+from endpoints import admin, api, imports, parameters, period, periods, static_files, summary, transactions
 
 
 application = FastAPI(title="Budget")
@@ -111,9 +111,27 @@ def transactions_page(
     return html(transactions.page(query_string(request), user_id(user)))
 
 
+@application.get("/summary", response_class=HTMLResponse, response_model=None)
+def summary_page(
+    request: Request,
+    user: auth.User | None = Depends(auth.optional_current_user),
+) -> Response:
+    if user is None:
+        return redirect("/login")
+    return html(summary.page(query_string(request), user_id(user)))
+
+
 @application.get("/admin", response_class=HTMLResponse, response_model=None)
-def admin_page(user: auth.User = Depends(auth.current_admin_user)) -> Response:
-    return html(admin.page(user_id(user)))
+def admin_page(request: Request, user: auth.User = Depends(auth.current_admin_user)) -> Response:
+    return html(admin.page(user_id(user), query_string(request)))
+
+
+@application.post("/admin/users/create", response_model=None)
+async def admin_create_user(request: Request, _user: auth.User = Depends(auth.current_admin_user)) -> RedirectResponse:
+    try:
+        return redirect(admin.create_user(await form_data(request)))
+    except ValueError as error:
+        return redirect(f"/admin?error={quote(str(error))}")
 
 
 @application.post("/admin/users/password", response_model=None)

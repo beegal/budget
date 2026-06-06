@@ -6,7 +6,7 @@ from datetime import datetime
 
 from components.common import icon, label_picker, row_action_buttons
 from config import NUMBER_DECIMALS
-from web_helpers import format_date, format_number, money
+from web_helpers import format_date, format_number, money, transaction_filter_url
 
 
 def period_tabs_view(
@@ -45,7 +45,7 @@ def overview_view(
     return {
         "type": "overview",
         "balance_rows": [balance_row_view(period_id, row) for row in balance_rows],
-        "summary_rows": [summary_row_view(row) for row in non_transfer_rows],
+        "summary_rows": [summary_row_view(row, [period_id]) for row in non_transfer_rows],
         "transfer_rows": [transfer_row_view(row) for row in transfer_rows],
         "summary_total": {
             "income": money(total_income),
@@ -107,9 +107,11 @@ def balance_row_view(period_id: int, row: sqlite3.Row) -> dict[str, object]:
     }
 
 
-def summary_row_view(row: sqlite3.Row) -> dict[str, object]:
+def summary_row_view(row: sqlite3.Row, period_ids: list[int] | None = None) -> dict[str, object]:
+    period_ids = period_ids or []
     return {
         "label_group": row["label_group"],
+        "href": transaction_filter_url(period_ids, row["label_group"]) if period_ids else "",
         "income": money_or_empty(row["income"]),
         "expense": money_or_empty(row["expense"]),
         "net": money_or_empty(row["net"]),

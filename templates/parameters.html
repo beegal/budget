@@ -5,19 +5,6 @@
   <span class="save-state" data-save-state></span>
 </section>
 <script>window.BUDGET_LABELS = {{ labels_json | safe }};</script>
-<section class="panel wide data-portability-panel">
-  <div>
-    <h2>Sauvegarde utilisateur</h2>
-    <p>Exporte ou remplace uniquement les données du compte connecté.</p>
-  </div>
-  <div class="data-portability-actions">
-    <a class="button" href="/parameters/export">Exporter mes données</a>
-    <form method="post" action="/parameters/import" enctype="multipart/form-data">
-      <input type="file" name="file" accept=".xlsx" required>
-      <button type="submit">Importer</button>
-    </form>
-  </div>
-</section>
 <section class="settings-grid">
   <div class="panel">
     <h2>Comptes</h2>
@@ -51,5 +38,17 @@
       <tfoot><tr><td></td><td></td><td></td><td class="row-actions"><button type="button" class="add-row-button" data-add-budget-row>+</button></td></tr></tfoot>
     </table>
     </div>
+  </div>
+</section>
+<section class="panel wide data-portability-panel">
+  <div>
+    <h2>Sauvegarde utilisateur</h2>
+  </div>
+  <div class="data-portability-actions">
+    <a class="button ghost" href="/parameters/export">Export</a>
+    <form method="post" action="/parameters/import" enctype="multipart/form-data">
+      <input type="file" name="file" accept=".xlsx" required>
+      <button type="submit" class="ghost">Import</button>
+    </form>
   </div>
 </section>

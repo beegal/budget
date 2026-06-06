@@ -6,7 +6,7 @@ import sqlite3
 from components.periods import period_card_view
 import database
 from database import db
-from web_helpers import format_date, layout, normalize_date, one, period_label, render_template
+from web_helpers import format_date, normalize_date, one, period_label, render_template, user_layout
 
 
 def page(user_id: str) -> bytes:
@@ -48,7 +48,7 @@ def page(user_id: str) -> bytes:
         for row in periods
     ]
     body = render_template("periods.html", today=format_date(date.today().isoformat()), periods=period_views)
-    return layout("Périodes", body)
+    return user_layout("Périodes", body, user_id)
 
 
 def period_warnings(periods: list[sqlite3.Row]) -> dict[int, str]:

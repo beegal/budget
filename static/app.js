@@ -1244,11 +1244,116 @@ async function createLabelFromPicker(picker) {
   else if (input.dataset.save) await saveCell(input);
 }
 
+function periodFilterCheckboxes(filter) {
+  if (!filter) return [];
+  return Array.from(filter.querySelectorAll("[data-period-filter-checkbox]"));
+}
+
+function periodFilterSelectedIds(filter) {
+  return periodFilterCheckboxes(filter)
+    .filter((checkbox) => checkbox.checked)
+    .map((checkbox) => checkbox.value);
+}
+
+function renderPeriodFilterTags(filter) {
+  if (!filter) return;
+  const tagBox = filter.querySelector("[data-period-tag-box]");
+  const input = filter.querySelector("[data-period-tag-input]");
+  if (!tagBox || !input) return;
+  tagBox.querySelectorAll("[data-period-tag]").forEach((tag) => tag.remove());
+  periodFilterCheckboxes(filter)
+    .filter((checkbox) => checkbox.checked)
+    .forEach((checkbox) => {
+      const tag = document.createElement("span");
+      tag.className = "period-filter-tag";
+      tag.dataset.periodTag = checkbox.value;
+      tag.textContent = checkbox.dataset.periodName || checkbox.value;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.dataset.periodTagRemove = "";
+      remove.setAttribute("aria-label", `Retirer ${tag.textContent}`);
+      remove.textContent = "x";
+      tag.appendChild(remove);
+      tagBox.insertBefore(tag, input);
+    });
+}
+
+function syncPeriodFilter(filter, mode = "explicit") {
+  if (!filter) return;
+  const hidden = filter.querySelector("[data-period-filter-value]");
+  const checkboxes = periodFilterCheckboxes(filter);
+  const selectedIds = periodFilterSelectedIds(filter);
+  if (hidden) {
+    if (mode === "all" || (checkboxes.length > 0 && selectedIds.length === checkboxes.length)) hidden.value = "all";
+    else if (selectedIds.length === 0) hidden.value = "all";
+    else hidden.value = selectedIds.join(",");
+  }
+  renderPeriodFilterTags(filter);
+}
+
+function addPeriodFilterTag(filter, value) {
+  if (!filter) return false;
+  const needle = normalized(value);
+  if (!needle) return false;
+  const checkboxes = periodFilterCheckboxes(filter);
+  const match = checkboxes.find((checkbox) => normalized(checkbox.dataset.periodName || "") === needle)
+    || checkboxes.find((checkbox) => normalized(checkbox.value) === needle)
+    || checkboxes.find((checkbox) => normalized(checkbox.dataset.periodName || "").includes(needle));
+  if (!match) return false;
+  match.checked = true;
+  syncPeriodFilter(filter);
+  return true;
+}
+
+function submitPeriodFilterIfNeeded(filter) {
+  const form = filter?.closest("form[data-period-auto-submit]");
+  if (!form) return;
+  submitFilterForm(form);
+}
+
+function submitFilterForm(form) {
+  if (typeof form.requestSubmit === "function") form.requestSubmit();
+  else form.submit();
+}
+
+let filterSubmitTimer = null;
+
+function scheduleFilterSubmit(form) {
+  if (!form) return;
+  window.clearTimeout(filterSubmitTimer);
+  filterSubmitTimer = window.setTimeout(() => submitFilterForm(form), 450);
+}
+
+function openAdminUserCreateRow(button) {
+  const table = button.closest("table");
+  const row = table?.querySelector("[data-admin-user-create-row]");
+  const addRow = table?.querySelector("[data-admin-user-add-row]");
+  if (!row) return;
+  row.hidden = false;
+  if (addRow) addRow.hidden = true;
+  row.querySelector('input[name="email"]')?.focus();
+}
+
+function cancelAdminUserCreateRow(button) {
+  const table = button.closest("table");
+  const row = table?.querySelector("[data-admin-user-create-row]");
+  const addRow = table?.querySelector("[data-admin-user-add-row]");
+  const form = table?.querySelector("#admin-create-user-form");
+  if (form) form.reset();
+  if (row) row.hidden = true;
+  if (addRow) addRow.hidden = false;
+}
+
 document.addEventListener("focusin", (event) => {
   const editable = event.target.closest("[contenteditable][data-save]");
   if (editable) editable.dataset.before = editable.textContent.trim();
   const input = event.target.closest("input[data-save]");
   if (input) input.dataset.before = input.value.trim();
+  const periodTagInput = event.target.closest("[data-period-tag-input]");
+  if (periodTagInput) {
+    const menu = periodTagInput.closest("[data-period-filter]")?.querySelector("[data-period-filter-menu]");
+    if (menu) menu.hidden = false;
+  }
   const transactionRow = event.target.closest("[data-transaction-table] tr[data-transaction-id]");
   if (transactionRow && !transactionRow.classList.contains("dirty")) focusRowDeleteAction(transactionRow);
   const settingRow = event.target.closest("[data-settings-row]");
@@ -1313,7 +1418,18 @@ document.addEventListener("keydown", async (event) => {
   const periodCreateInput = event.target.closest("[data-period-create-form] input");
   const budgetScheduleInput = event.target.closest("[data-budget-schedule-field], [data-budget-schedule-new-row] [data-label-input]");
   const accountBalanceInput = event.target.closest("[data-balance-input]");
+  const periodTagInput = event.target.closest("[data-period-tag-input]");
 
+  if ((event.key === "Enter" || event.key === ",") && periodTagInput) {
+    event.preventDefault();
+    const filter = periodTagInput.closest("[data-period-filter]");
+    const added = addPeriodFilterTag(filter, periodTagInput.value);
+    if (added) {
+      periodTagInput.value = "";
+      submitPeriodFilterIfNeeded(filter);
+    }
+    return;
+  }
   if (event.key === "Escape" && document.querySelector("[data-budget-account-list]:not([hidden])")) {
     event.preventDefault();
     closeBudgetAccountLists();
@@ -1474,6 +1590,16 @@ document.addEventListener("change", (event) => {
     };
     textarea.placeholder = placeholders[formatSelect?.value] || "";
   }
+
+  const periodCheckbox = event.target.closest("[data-period-filter-checkbox]");
+  if (periodCheckbox) {
+    const filter = periodCheckbox.closest("[data-period-filter]");
+    syncPeriodFilter(filter);
+    submitPeriodFilterIfNeeded(filter);
+  }
+
+  const autoSubmitSelect = event.target.closest("form[data-filter-auto-submit] select");
+  if (autoSubmitSelect) submitFilterForm(autoSubmitSelect.closest("form"));
 });
 
 document.addEventListener("input", (event) => {
@@ -1494,7 +1620,17 @@ document.addEventListener("input", (event) => {
     renderLabelSuggestions(input.closest("[data-label-picker]"));
     if (input.closest("[data-transaction-table]")) markRowDirty(input.closest("tr"));
     if (input.closest("[data-budget-schedule-new-row]")) input.closest("tr").classList.add("dirty");
+    const autoSubmitForm = input.closest("form[data-filter-auto-submit]");
+    if (autoSubmitForm) scheduleFilterSubmit(autoSubmitForm);
     return;
+  }
+  const periodTagInput = event.target.closest("[data-period-tag-input]");
+  if (periodTagInput && periodTagInput.value.includes(",")) {
+    const parts = periodTagInput.value.split(",");
+    periodTagInput.value = parts.pop() || "";
+    const filter = periodTagInput.closest("[data-period-filter]");
+    const added = parts.map((part) => addPeriodFilterTag(filter, part)).some(Boolean);
+    if (added) submitPeriodFilterIfNeeded(filter);
   }
   const budgetScheduleInput = event.target.closest("[data-budget-schedule-field]");
   if (budgetScheduleInput) budgetScheduleInput.closest("tr")?.classList.add("dirty");
@@ -1584,6 +1720,63 @@ document.addEventListener("click", async (event) => {
   }
   if (!event.target.closest("[data-account-merge-list], [data-merge-account]")) {
     closeAccountMergeLists();
+  }
+  if (!event.target.closest("[data-period-filter]")) {
+    document.querySelectorAll("[data-period-filter-menu]").forEach((menu) => {
+      menu.hidden = true;
+    });
+  }
+
+  const periodFilterToggle = event.target.closest("[data-period-filter-toggle]");
+  if (periodFilterToggle) {
+    const menu = periodFilterToggle.closest("[data-period-filter]")?.querySelector("[data-period-filter-menu]");
+    if (menu) menu.hidden = !menu.hidden;
+    return;
+  }
+
+  const periodFilterAll = event.target.closest("[data-period-filter-all]");
+  if (periodFilterAll) {
+    const filter = periodFilterAll.closest("[data-period-filter]");
+    periodFilterCheckboxes(filter).forEach((checkbox) => {
+      checkbox.checked = true;
+    });
+    syncPeriodFilter(filter, "all");
+    submitPeriodFilterIfNeeded(filter);
+    return;
+  }
+
+  const periodFilterNone = event.target.closest("[data-period-filter-none]");
+  if (periodFilterNone) {
+    const filter = periodFilterNone.closest("[data-period-filter]");
+    periodFilterCheckboxes(filter).forEach((checkbox) => {
+      checkbox.checked = false;
+    });
+    syncPeriodFilter(filter);
+    submitPeriodFilterIfNeeded(filter);
+    return;
+  }
+
+  const periodTagRemove = event.target.closest("[data-period-tag-remove]");
+  if (periodTagRemove) {
+    const filter = periodTagRemove.closest("[data-period-filter]");
+    const tag = periodTagRemove.closest("[data-period-tag]");
+    const checkbox = filter?.querySelector(`[data-period-filter-checkbox][value="${CSS.escape(tag?.dataset.periodTag || "")}"]`);
+    if (checkbox) checkbox.checked = false;
+    syncPeriodFilter(filter);
+    submitPeriodFilterIfNeeded(filter);
+    return;
+  }
+
+  const adminCreateToggle = event.target.closest("[data-admin-user-create-toggle]");
+  if (adminCreateToggle) {
+    openAdminUserCreateRow(adminCreateToggle);
+    return;
+  }
+
+  const adminCreateCancel = event.target.closest("[data-admin-user-create-cancel]");
+  if (adminCreateCancel) {
+    cancelAdminUserCreateRow(adminCreateCancel);
+    return;
   }
 
   const hideAccountTabButton = event.target.closest("[data-hide-account-tab]");
@@ -1700,6 +1893,7 @@ document.addEventListener("click", async (event) => {
     if (row?.closest("[data-transaction-table]")) markRowDirty(row);
     else if (row?.closest("[data-monthly-budget-table]")) markBudgetDirty(row);
     else if (input.dataset.save) await saveCell(input);
+    else if (input.closest("form[data-filter-auto-submit]")) submitFilterForm(input.closest("form"));
     return;
   }
 

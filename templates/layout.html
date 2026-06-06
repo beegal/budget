@@ -10,13 +10,18 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/">Budget</a>
+    {% if authenticated %}
     <nav>
       <a href="/">Périodes</a>
       <a href="/parameters">Paramètres</a>
       <a href="/transactions">Transactions</a>
+      <a href="/summary">Synthèse</a>
+      {% if show_admin %}
       <a href="/admin">Admin</a>
+      {% endif %}
       <form class="logout-form" method="post" action="/logout"><button type="submit" class="link-button">Déconnexion</button></form>
     </nav>
+    {% endif %}
   </header>
   <main>{{ body | safe }}</main>
 </body>

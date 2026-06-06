@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlencode
 from components.common import panel_message
 from components.period import account_tab_view, budget_tab_view, overview_view, period_tabs_view
 from database import db
-from web_helpers import layout, period_label, render_template
+from web_helpers import period_label, render_template, user_layout
 
 
 def page(period_id: int, query: str, user_id: str) -> bytes:
@@ -15,7 +15,7 @@ def page(period_id: int, query: str, user_id: str) -> bytes:
     with db() as conn:
         period = conn.execute("SELECT * FROM period WHERE id = ? AND user_id = ?", (period_id, user_id)).fetchone()
         if period is None:
-            return layout("Introuvable", panel_message("Période introuvable"))
+            return user_layout("Introuvable", panel_message("Période introuvable"), user_id)
         navigation_periods = conn.execute(
             """
             SELECT id, name, start_date
@@ -64,7 +64,7 @@ def page(period_id: int, query: str, user_id: str) -> bytes:
                 (period_id, active, user_id),
             ).fetchall()
             if selected_account is None:
-                return layout("Introuvable", panel_message("Compte introuvable"))
+                return user_layout("Introuvable", panel_message("Compte introuvable"), user_id)
 
     visible_accounts = [
         account
@@ -86,7 +86,7 @@ def page(period_id: int, query: str, user_id: str) -> bytes:
         tabs=period_tabs_view(period_id, active, visible_accounts, hidden_accounts),
         content=content,
     )
-    return layout(str(period["name"]), body)
+    return user_layout(str(period["name"]), body, user_id)
 
 
 def period_navigation_view(periods: list[sqlite3.Row], period_id: int, active: str) -> dict[str, object]:

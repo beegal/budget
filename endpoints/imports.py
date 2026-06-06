@@ -11,7 +11,7 @@ from components.imports import validation_view
 from config import DATE_FORMAT, normalize_import_name
 from database import db
 from endpoints import api
-from web_helpers import format_date, layout, parse_month, period_label, render_template
+from web_helpers import format_date, parse_month, period_label, render_template, user_layout
 
 
 DATE_FORMAT_LABELS = {
@@ -31,7 +31,7 @@ def page(period_id: int, query: str, user_id: str) -> bytes:
             (account_id, user_id),
         ).fetchone() if account_id else None
     if period is None or account is None:
-        return layout("Import introuvable", panel_message("Import introuvable"))
+        return user_layout("Import introuvable", panel_message("Import introuvable"), user_id)
     return page_html(period, account, "", default_date_format(), "csv_header")
 
 
@@ -58,7 +58,7 @@ def page_html(
         format_value=format_value,
         validation=validation_view(validation),
     )
-    return layout("Import CSV", body)
+    return user_layout("Import CSV", body, str(period["user_id"]))
 
 
 def submit(period_id: int, data: dict[str, list[str]], user_id: str) -> str | bytes:

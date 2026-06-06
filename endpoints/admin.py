@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import uuid
+from urllib.parse import parse_qs
+
 from fastapi_users.password import PasswordHelper
 
+import database
 from database import db
-from web_helpers import layout, one, render_template
+from web_helpers import one, render_template, user_layout
 
 
 password_helper = PasswordHelper()
 
 
-def page(current_user_id: str) -> bytes:
+def page(current_user_id: str, query: str = "") -> bytes:
+    params = parse_qs(query)
     with db() as conn:
         users = conn.execute(
             """
@@ -27,8 +32,42 @@ def page(current_user_id: str) -> bytes:
             ORDER BY LOWER(u.email)
             """
         ).fetchall()
-    body = render_template("admin.html", users=users, current_user_id=current_user_id)
-    return layout("Administration", body)
+    body = render_template(
+        "admin.html",
+        users=users,
+        current_user_id=current_user_id,
+        error=params.get("error", [""])[0],
+    )
+    return user_layout("Administration", body, current_user_id)
+
+
+def create_user(data: dict[str, list[str]]) -> str:
+    email = one(data, "email").lower()
+    password = one(data, "password")
+    if not email:
+        raise ValueError("L'email est obligatoire.")
+    if len(password) < 8:
+        raise ValueError("Le mot de passe doit contenir au moins 8 caractères.")
+    user_id = str(uuid.uuid4())
+    with db() as conn:
+        existing = conn.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (email,)).fetchone()
+        if existing is not None:
+            raise ValueError("Cet utilisateur existe déjà.")
+        conn.execute(
+            """
+            INSERT INTO users(id, email, hashed_password, is_active, is_superuser, is_verified, last_login)
+            VALUES (?, ?, ?, ?, ?, 0, NULL)
+            """,
+            (
+                user_id,
+                email,
+                password_helper.hash(password),
+                1 if data.get("is_active", ["0"])[-1] == "1" else 0,
+                1 if data.get("is_superuser", ["0"])[-1] == "1" else 0,
+            ),
+        )
+        database.ensure_user_data(conn, user_id)
+    return "/admin"
 
 
 def set_password(data: dict[str, list[str]]) -> str:

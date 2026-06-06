@@ -1,9 +1,10 @@
 <section class="page-title"><h1>Transactions</h1></section>
-<form class="filters" method="get">
-  <select name="period">{{ period_options | safe }}</select>
-  <select name="account">{{ account_options | safe }}</select>
-  <input name="q" value="{{ search }}" placeholder="Recherche intitulé">
-  <button>Filtrer</button>
+<script>window.BUDGET_LABELS = {{ labels_json | safe }};</script>
+<form class="filters transaction-filters" method="get" data-period-auto-submit data-filter-auto-submit>
+  {% include "components/period_selector.html" %}
+  {% include "components/account_selector.html" %}
+  {{ label_filter | safe }}
+  <button class="icon-button filter-refresh-button" title="Rafraîchir" aria-label="Rafraîchir">↻</button>
 </form>
 <section class="panel">
   <table>
@@ -19,5 +20,17 @@
       </tr>
       {% endfor %}
     </tbody>
+    <tfoot>
+      <tr class="total-row">
+        <th colspan="4">Total</th>
+        <th class="num">
+          <span class="transaction-total-cell">
+            <span class="negative">Débit {{ totals.debit }}</span>
+            <span class="positive">Crédit {{ totals.credit }}</span>
+            <span class="{{ totals.total_class }}">Total {{ totals.total }}</span>
+          </span>
+        </th>
+      </tr>
+    </tfoot>
   </table>
 </section>
