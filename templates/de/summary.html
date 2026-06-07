@@ -1,0 +1,33 @@
+<section class="page-title"><h1>Übersicht</h1></section>
+<form class="filters summary-filters" method="get" data-multi-auto-submit>
+  {% include "components/period_selector.html" %}
+  <button class="icon-button summary-refresh-button" title="Aktualisieren" aria-label="Aktualisieren">↻</button>
+</form>
+<section class="panel">
+  <h2>Einnahmen / Ausgaben nach Bezeichnung</h2>
+  <table class="overview-table">
+    <thead><tr><th title="Gruppiert nach dem Text vor "-".">Bezeichnung</th><th class="num">Einnahmen</th><th class="num">Ausgaben</th><th class="num">Netto</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><a href="{{ row.href }}">{{ row.label_group }}</a></td>
+        <td class="num positive">{{ row.income }}</td>
+        <td class="num negative">{{ row.expense }}</td>
+        <td class="num {{ row.net_class }}">{{ row.net }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">Keine Transaktion.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if rows %}
+    <tfoot>
+      <tr class="total-row">
+        <th>Summe</th>
+        <th class="num positive">{{ totals.income }}</th>
+        <th class="num negative">{{ totals.expense }}</th>
+        <th class="num {{ totals.net_class }}">{{ totals.net }}</th>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</section>

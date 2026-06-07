@@ -1,15 +1,61 @@
-accounts:
-  - name: Compte courant
-    show_in_summary: true
-  - name: Compte epargne
-    show_in_summary: true
-
-labels:
-  - Salaire
-  - Courses
-  - Loyer
-  - Electricite
-  - Internet
-  - Transport
-  - Restaurant
-  - Virement interne
+languages:
+  fr:
+    accounts:
+      - name: Compte courant
+        show_in_summary: true
+      - name: Compte epargne
+        show_in_summary: true
+    labels:
+      - Salaire
+      - Courses
+      - Loyer
+      - Electricite
+      - Internet
+      - Transport
+      - Restaurant
+      - Virement interne
+  en:
+    accounts:
+      - name: Current account
+        show_in_summary: true
+      - name: Savings account
+        show_in_summary: true
+    labels:
+      - Salary
+      - Groceries
+      - Rent
+      - Electricity
+      - Internet
+      - Transport
+      - Restaurant
+      - Internal transfer
+  de:
+    accounts:
+      - name: Girokonto
+        show_in_summary: true
+      - name: Sparkonto
+        show_in_summary: true
+    labels:
+      - Gehalt
+      - Einkäufe
+      - Miete
+      - Strom
+      - Internet
+      - Transport
+      - Restaurant
+      - Interne Überweisung
+  nl:
+    accounts:
+      - name: Zichtrekening
+        show_in_summary: true
+      - name: Spaarrekening
+        show_in_summary: true
+    labels:
+      - Salaris
+      - Boodschappen
+      - Huur
+      - Elektriciteit
+      - Internet
+      - Vervoer
+      - Restaurant
+      - Interne overschrijving

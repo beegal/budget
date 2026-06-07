@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from components.common import icon, label_picker, row_action_buttons
+from i18n import translate
 from web_helpers import format_number, render_template
 
 
@@ -16,6 +17,7 @@ def settings_row(kind: str, row_id: int, name: str) -> str:
         name=name,
         group_name=group_name,
         subcategory=subcategory,
+        actions=row_action_buttons("setting"),
     )
 
 
@@ -37,9 +39,9 @@ def account_row(
 ) -> str:
     can_delete = transaction_count == 0
     delete_title = (
-        "Supprimer le compte"
+        translate("parameters.delete-account")
         if can_delete
-        else f"Impossible de supprimer le compte car il contient {transaction_count} transaction(s)"
+        else translate("parameters.delete-account-blocked", transactions=transaction_count)
     )
     merge_choices = [
         {"id": account["id"], "name": account["name"]}

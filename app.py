@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime
 from http import HTTPStatus
+from typing import Iterator
 from urllib.parse import parse_qs, quote
 from zipfile import BadZipFile
 
@@ -10,8 +12,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 import auth
 import budget_cli
+import database
 from database import db
-from endpoints import admin, api, imports, parameters, period, periods, static_files, summary, transactions
+from endpoints import admin, api, imports, parameters, period, periods, profile, static_files, summary, transactions
+from i18n import preferred_language, translate, use_language
+from user_preferences import ensure_user_preferences, use_preferences
 
 
 application = FastAPI(title="Personal Finance")
@@ -40,10 +45,12 @@ def head(_path: str = "") -> Response:
 
 
 @application.get("/", response_class=HTMLResponse, response_model=None)
-def periods_page(user: auth.User | None = Depends(auth.optional_current_user)) -> Response:
+def periods_page(request: Request, user: auth.User | None = Depends(auth.optional_current_user)) -> Response:
     if user is None:
         return redirect("/login")
-    return html(periods.page(user_id(user)))
+    uid = user_id(user)
+    with request_context(uid, request):
+        return html(periods.page(uid))
 
 
 @application.get("/period/{period_id}/import", response_class=HTMLResponse, response_model=None)
@@ -54,7 +61,9 @@ def import_page(
 ) -> Response:
     if user is None:
         return redirect("/login")
-    return html(imports.page(period_id, query_string(request), user_id(user)))
+    uid = user_id(user)
+    with request_context(uid, request):
+        return html(imports.page(period_id, query_string(request), uid))
 
 
 @application.get("/period/{period_id}", response_class=HTMLResponse, response_model=None)
@@ -65,14 +74,34 @@ def period_page(
 ) -> Response:
     if user is None:
         return redirect("/login")
-    return html(period.page(period_id, query_string(request), user_id(user)))
+    uid = user_id(user)
+    with request_context(uid, request):
+        return html(period.page(period_id, query_string(request), uid))
 
 
 @application.get("/parameters", response_class=HTMLResponse, response_model=None)
-def parameters_page(user: auth.User | None = Depends(auth.optional_current_user)) -> Response:
+def parameters_page(request: Request, user: auth.User | None = Depends(auth.optional_current_user)) -> Response:
     if user is None:
         return redirect("/login")
-    return html(parameters.page(user_id(user)))
+    uid = user_id(user)
+    with request_context(uid, request):
+        return html(parameters.page(uid))
+
+
+@application.get("/profile", response_class=HTMLResponse, response_model=None)
+def profile_page(request: Request, user: auth.User | None = Depends(auth.optional_current_user)) -> Response:
+    if user is None:
+        return redirect("/login")
+    uid = user_id(user)
+    with request_context(uid, request):
+        return html(profile.page(uid))
+
+
+@application.post("/profile", response_model=None)
+async def profile_save(request: Request, user: auth.User = Depends(auth.current_active_user)) -> RedirectResponse:
+    uid = user_id(user)
+    with request_context(uid, request):
+        return redirect(profile.save(await form_data(request), uid))
 
 
 @application.get("/parameters/export", response_model=None)
@@ -108,7 +137,9 @@ def transactions_page(
 ) -> Response:
     if user is None:
         return redirect("/login")
-    return html(transactions.page(query_string(request), user_id(user)))
+    uid = user_id(user)
+    with request_context(uid, request):
+        return html(transactions.page(query_string(request), uid))
 
 
 @application.get("/summary", response_class=HTMLResponse, response_model=None)
@@ -118,12 +149,16 @@ def summary_page(
 ) -> Response:
     if user is None:
         return redirect("/login")
-    return html(summary.page(query_string(request), user_id(user)))
+    uid = user_id(user)
+    with request_context(uid, request):
+        return html(summary.page(query_string(request), uid))
 
 
 @application.get("/admin", response_class=HTMLResponse, response_model=None)
 def admin_page(request: Request, user: auth.User = Depends(auth.current_admin_user)) -> Response:
-    return html(admin.page(user_id(user), query_string(request)))
+    uid = user_id(user)
+    with request_context(uid, request):
+        return html(admin.page(uid, query_string(request)))
 
 
 @application.post("/admin/users/create", response_model=None)
@@ -160,14 +195,18 @@ async def admin_set_admin(request: Request, user: auth.User = Depends(auth.curre
 
 @application.post("/api/{path:path}", response_model=None)
 async def api_update(path: str, request: Request, user: auth.User = Depends(auth.current_active_user)) -> JSONResponse:
-    result = api.update(f"/api/{path}", await json_data(request), user_id(user))
+    uid = user_id(user)
+    with request_context(uid, request):
+        result = api.update(f"/api/{path}", await json_data(request), uid)
     status = HTTPStatus.OK if result.pop("ok", False) else HTTPStatus(result.pop("status", 400))
     return JSONResponse({"ok": status == HTTPStatus.OK, **result}, status_code=status)
 
 
 @application.post("/periods/create", response_model=None)
 async def create_period(request: Request, user: auth.User = Depends(auth.current_active_user)) -> RedirectResponse:
-    return redirect(periods.create(await form_data(request), user_id(user)))
+    uid = user_id(user)
+    with request_context(uid, request):
+        return redirect(periods.create(await form_data(request), uid))
 
 
 @application.post("/parameters/accounts/create", response_model=None)
@@ -182,25 +221,29 @@ async def create_label(request: Request, user: auth.User = Depends(auth.current_
 
 @application.post("/transactions/create", response_model=None)
 async def create_transaction(request: Request, user: auth.User = Depends(auth.current_active_user)) -> RedirectResponse:
-    return redirect(transactions.create(await form_data(request), user_id(user)))
+    uid = user_id(user)
+    with request_context(uid, request):
+        return redirect(transactions.create(await form_data(request), uid))
 
 
 @application.post("/period/{period_id}/import", response_model=None)
 async def import_submit(period_id: int, request: Request, user: auth.User = Depends(auth.current_active_user)) -> Response:
-    result = imports.submit(period_id, await form_data(request), user_id(user))
+    uid = user_id(user)
+    with request_context(uid, request):
+        result = imports.submit(period_id, await form_data(request), uid)
     if isinstance(result, bytes):
         return html(result)
     return redirect(result)
 
 
 @application.get("/login", response_class=HTMLResponse)
-def login_page() -> HTMLResponse:
-    return html(render_public_page("login.html"))
+def login_page(request: Request) -> HTMLResponse:
+    return html(render_public_page("login.html", request))
 
 
 @application.get("/register", response_class=HTMLResponse)
-def register_page() -> HTMLResponse:
-    return html(render_public_page("register.html"))
+def register_page(request: Request) -> HTMLResponse:
+    return html(render_public_page("register.html", request))
 
 
 @application.post("/logout", response_model=None)
@@ -240,10 +283,27 @@ def user_id(user: auth.User) -> str:
     return value
 
 
-def render_public_page(template_name: str) -> bytes:
+@contextmanager
+def request_context(uid: str | None = None, request: Request | None = None) -> Iterator[None]:
+    language_id = None
+    if request:
+        language_id = request.cookies.get("budget_language") or preferred_language(request.headers.get("accept-language"))
+    with use_language(language_id):
+        if uid is None:
+            yield
+            return
+        with db() as conn:
+            preferences = ensure_user_preferences(conn, uid, language_id)
+            database.ensure_user_data(conn, uid, language_id)
+        with use_preferences(preferences):
+            yield
+
+
+def render_public_page(template_name: str, request: Request | None = None) -> bytes:
     from web_helpers import layout, render_template
 
-    return layout("Connexion", render_template(template_name))
+    with request_context(request=request):
+        return layout(translate("auth.login-title"), render_template(template_name))
 
 
 async def form_data(request: Request) -> dict[str, list[str]]:

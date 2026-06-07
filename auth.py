@@ -15,6 +15,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import DeclarativeBase
 
 import database
+from i18n import preferred_language
+from user_preferences import ensure_user_preferences
 
 
 ROOT = Path(__file__).resolve().parent
@@ -76,9 +78,14 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     verification_token_secret = AUTH_SECRET
 
     async def on_after_register(self, user: User, request: Request | None = None) -> None:
+        language_id = (
+            request.cookies.get("budget_language") or preferred_language(request.headers.get("accept-language"))
+            if request
+            else None
+        )
         with database.db() as conn:
             database.adopt_legacy_data(conn, str(user.id))
-            database.ensure_user_data(conn, str(user.id))
+            ensure_user_preferences(conn, str(user.id), language_id)
 
 
 async def get_user_manager(user_db: SQLAlchemyUserDatabase = Depends(get_user_db)):

@@ -8,6 +8,62 @@ function resetSaveState() {
   setSaveState(document.querySelector("[data-save-state]"), "");
 }
 
+function budgetConfig() {
+  return window.BUDGET_CONFIG || {};
+}
+
+function tr(key, values = {}) {
+  let text = (window.BUDGET_I18N || {})[key] || key;
+  for (const [name, value] of Object.entries(values)) {
+    text = text.split(`{${name}}`).join(String(value));
+  }
+  return text;
+}
+
+function displayLocale() {
+  return budgetConfig().locale || navigator.language || "fr-FR";
+}
+
+function numberDecimals(defaultValue = 2) {
+  const value = Number(budgetConfig().numberDecimals);
+  return Number.isFinite(value) ? value : defaultValue;
+}
+
+function numberSeparators() {
+  const parts = new Intl.NumberFormat(displayLocale()).formatToParts(12345.6);
+  return {
+    group: parts.find((part) => part.type === "group")?.value || " ",
+    decimal: parts.find((part) => part.type === "decimal")?.value || ",",
+  };
+}
+
+function setLongLivedCookie(name, value) {
+  document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Max-Age=315360000; Path=/; SameSite=Lax`;
+}
+
+function getCookie(name) {
+  const encodedName = `${encodeURIComponent(name)}=`;
+  return document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(encodedName))
+    ?.slice(encodedName.length) || "";
+}
+
+function persistInitialLanguage() {
+  if (getCookie("budget_language")) return;
+  const language = budgetConfig().language;
+  if (language) setLongLivedCookie("budget_language", language);
+}
+
+function updateLanguageSelector(select) {
+  const icon = select.closest(".language-selector")?.querySelector("[data-language-selector-icon]");
+  const option = select.selectedOptions[0];
+  if (icon && option) icon.textContent = option.dataset.icon || "";
+}
+
+persistInitialLanguage();
+
 async function login(email, password) {
   const body = new URLSearchParams();
   body.set("username", email);
@@ -17,7 +73,7 @@ async function login(email, password) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  if (!response.ok) throw new Error("Email ou mot de passe invalide");
+  if (!response.ok) throw new Error(tr("js.invalid-login"));
 }
 
 async function register(email, password) {
@@ -28,7 +84,7 @@ async function register(email, password) {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || "Création du compte impossible");
+    throw new Error(error.detail || tr("js.register-error"));
   }
 }
 
@@ -36,23 +92,27 @@ async function submitAuthForm(form, mode) {
   const message = form.querySelector("[data-auth-message]");
   const email = form.elements.email.value.trim();
   const password = form.elements.password.value;
-  setSaveState(message, "Connexion...", false);
+  setSaveState(message, tr("js.login-progress"), false);
   try {
     if (mode === "register") await register(email, password);
     await login(email, password);
     window.location.href = "/";
   } catch (error) {
-    setSaveState(message, error.message || "Erreur de connexion", true);
+    setSaveState(message, error.message || tr("js.login-error"), true);
   }
 }
 
 function parseDisplayNumber(value) {
-  return Number(String(value || "").replace(/\s/g, "").replace(",", "."));
+  const { group, decimal } = numberSeparators();
+  let normalized = String(value || "").trim().replace(/\s/g, "");
+  if (group && group !== " ") normalized = normalized.split(group).join("");
+  if (decimal && decimal !== ".") normalized = normalized.split(decimal).join(".");
+  return Number(normalized);
 }
 
 function formatDisplayNumber(value, decimals = 2) {
   const sign = value < 0 ? "-" : "";
-  return `${sign}${Math.abs(value).toLocaleString("fr-BE", {
+  return `${sign}${Math.abs(value).toLocaleString(displayLocale(), {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   })}`;
@@ -66,13 +126,15 @@ function updateTransactionRunningBalances(table) {
   if (!table) return;
   const openingRaw = table.dataset.openingBalance || "";
   const balanceDefined = openingRaw.trim() !== "";
-  const decimals = Number(table.dataset.numberDecimals || 2);
+  const decimals = Number(table.dataset.numberDecimals || numberDecimals());
   let runningBalance = balanceDefined ? parseDisplayNumber(openingRaw) : 0;
   let operationsTotal = 0;
 
   table.querySelectorAll("tbody tr").forEach((row) => {
     const index = row.querySelector(".row-index-value");
-    const title = balanceDefined ? `Solde: ${formatDisplayMoney(runningBalance, decimals)}` : "Solde: inconnu";
+    const title = balanceDefined
+      ? `${tr("js.balance")}: ${formatDisplayMoney(runningBalance, decimals)}`
+      : tr("js.unknown-balance");
     if (index) {
       index.title = title;
       index.setAttribute("aria-label", title);
@@ -87,8 +149,8 @@ function updateTransactionRunningBalances(table) {
   const currentBalance = table.querySelector("[data-current-balance-text]");
   if (currentBalance) {
     currentBalance.textContent = balanceDefined
-      ? `Solde actuel : ${formatDisplayMoney(runningBalance, decimals)} - Total opérations : ${formatDisplayMoney(operationsTotal, decimals)}`
-      : `Solde actuel : inconnu - Total opérations : ${formatDisplayMoney(operationsTotal, decimals)}`;
+      ? `${tr("js.current-balance")} : ${formatDisplayMoney(runningBalance, decimals)} - ${tr("js.total-operations")} : ${formatDisplayMoney(operationsTotal, decimals)}`
+      : `${tr("js.current-balance")} : ${tr("period.unknown")} - ${tr("js.total-operations")} : ${formatDisplayMoney(operationsTotal, decimals)}`;
   }
 }
 
@@ -119,7 +181,7 @@ async function saveCell(element) {
   }
 
   element.classList.add("saving");
-  setSaveState(state, "Enregistrement...");
+  setSaveState(state, tr("js.saving"));
 
   const response = await fetch(endpoint, {
     method: "POST",
@@ -131,7 +193,7 @@ async function saveCell(element) {
 
   if (!result.ok) {
     element.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   element.classList.remove("save-error");
@@ -150,7 +212,7 @@ async function saveCell(element) {
     }
   }
   element.classList.add("saved");
-  setSaveState(state, "Enregistré");
+  setSaveState(state, tr("js.saved"));
   setTimeout(() => element.classList.remove("saved"), 700);
 }
 
@@ -191,7 +253,7 @@ async function saveAccountBalanceEditor(cell) {
   const display = cell.querySelector("[data-balance-display]");
   const editor = cell.querySelector("[data-balance-edit]");
   const value = input?.value.trim() || "";
-  setSaveState(state, "Enregistrement...");
+  setSaveState(state, tr("js.saving"));
   const response = await fetch("/api/account-balance", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -205,14 +267,14 @@ async function saveAccountBalanceEditor(cell) {
   const result = await response.json();
   if (!result.ok) {
     cell.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   const savedValue = result.value || "";
   cell.dataset.original = savedValue;
   if (input) input.value = savedValue;
   if (display) {
-    display.textContent = result.display || "inconnu";
+    display.textContent = result.display || tr("period.unknown");
     display.classList.toggle("balance-undefined", !savedValue);
     display.hidden = false;
   }
@@ -220,12 +282,12 @@ async function saveAccountBalanceEditor(cell) {
   setAccountBalanceTone(cell, savedValue);
   const currentCell = cell.closest("tr")?.querySelector("[data-account-current-cell]");
   if (currentCell) {
-    currentCell.textContent = result.current_display || "inconnu";
+    currentCell.textContent = result.current_display || tr("period.unknown");
     currentCell.classList.toggle("balance-undefined", !result.current);
     setAccountBalanceTone(currentCell, result.current || "");
   }
   cell.classList.remove("save-error");
-  setSaveState(state, "Enregistré");
+  setSaveState(state, tr("js.saved"));
 }
 
 async function hideAccountTab(button) {
@@ -237,7 +299,7 @@ async function hideAccountTab(button) {
   });
   const result = await response.json();
   if (!result.ok) {
-    setSaveState(document.querySelector("[data-save-state]"), result.error || "Erreur", true);
+    setSaveState(document.querySelector("[data-save-state]"), result.error || tr("js.save-error"), true);
     return;
   }
   window.location.href = `/period/${button.dataset.periodId}`;
@@ -256,7 +318,7 @@ async function saveTransactionRow(row) {
     comment: getRowField(row, "comment"),
   };
 
-  setSaveState(state, "Enregistrement...");
+  setSaveState(state, tr("js.saving"));
   const response = await fetch("/api/transaction-row", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -265,7 +327,7 @@ async function saveTransactionRow(row) {
   const result = await response.json();
   if (!result.ok) {
     row.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
 
@@ -285,7 +347,7 @@ async function saveTransactionRow(row) {
   applyTransactionIndexes(table, result.rows || []);
   updateTransactionRunningBalances(table);
   flashSavedRow(row);
-  setSaveState(state, "Enregistré");
+  setSaveState(state, tr("js.saved"));
 }
 
 async function deleteTransactionRow(row) {
@@ -295,7 +357,7 @@ async function deleteTransactionRow(row) {
     row.remove();
     return;
   }
-  setSaveState(state, "Suppression...");
+  setSaveState(state, tr("js.deleting"));
   const response = await fetch("/api/transaction-delete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -304,18 +366,18 @@ async function deleteTransactionRow(row) {
   const result = await response.json();
   if (!result.ok) {
     row.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   row.remove();
   applyTransactionIndexes(table, result.rows || []);
   updateTransactionRunningBalances(table);
-  setSaveState(state, "Supprimé");
+  setSaveState(state, tr("js.deleted"));
 }
 
 async function clearTransactionTable(table) {
   const state = document.querySelector("[data-save-state]");
-  setSaveState(state, "Suppression...");
+  setSaveState(state, tr("js.deleting"));
   const response = await fetch("/api/transaction-clear", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -323,12 +385,12 @@ async function clearTransactionTable(table) {
   });
   const result = await response.json();
   if (!result.ok) {
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   table.querySelector("tbody").innerHTML = "";
   updateTransactionRunningBalances(table);
-  setSaveState(state, "Supprimé");
+  setSaveState(state, tr("js.deleted"));
 }
 
 function getRowField(row, field) {
@@ -406,7 +468,7 @@ async function reorderTransactionRow(row, targetRow, position) {
   if (!row || !targetRow || row === targetRow || row.dataset.newRow === "true") return;
   const state = document.querySelector("[data-save-state]");
   const table = row.closest("[data-transaction-table]");
-  setSaveState(state, "Réorganisation...");
+  setSaveState(state, tr("js.reordering"));
   const response = await fetch("/api/transaction-reorder", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -419,7 +481,7 @@ async function reorderTransactionRow(row, targetRow, position) {
   const result = await response.json();
   if (!result.ok) {
     row.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   setRowField(row, "date", result.date || "");
@@ -429,7 +491,7 @@ async function reorderTransactionRow(row, targetRow, position) {
   updateTransactionRunningBalances(table);
   row.classList.remove("save-error");
   flashSavedRow(row);
-  setSaveState(state, "Ordre enregistré");
+  setSaveState(state, tr("js.order-saved"));
 }
 
 function snapshotRow(row) {
@@ -482,7 +544,7 @@ function createEmptyRow(table) {
   row.dataset.newRow = "true";
   row.className = "dirty";
   row.innerHTML = `
-    <td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-drag-handle title="Déplacer">↕</button><span class="row-index-value" data-field="sort_index" data-original=""></span></td>
+    <td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-drag-handle title="${tr("period.move")}">↕</button><span class="row-index-value" data-field="sort_index" data-original=""></span></td>
     <td class="editable" contenteditable="true" data-save="transaction" data-field="date" data-original=""></td>
     <td>${labelPickerHtml("", 'data-save="transaction" data-field="label"')}</td>
     <td class="editable num" contenteditable="true" data-save="transaction" data-field="amount" data-original=""></td>
@@ -606,7 +668,7 @@ async function deleteSettingRow(row) {
     return;
   }
   const inputs = settingInputs(row);
-  setSaveState(state, "Suppression...");
+  setSaveState(state, tr("js.deleting"));
   const response = await fetch(`/api/${kind}-delete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -615,11 +677,11 @@ async function deleteSettingRow(row) {
   const result = await response.json();
   if (!result.ok) {
     inputs.forEach((input) => input.classList.add("save-error"));
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   row.remove();
-  setSaveState(state, "Supprimé");
+  setSaveState(state, tr("js.deleted"));
 }
 
 async function deleteAccountRow(row) {
@@ -629,7 +691,7 @@ async function deleteAccountRow(row) {
     return;
   }
   const state = document.querySelector("[data-save-state]");
-  setSaveState(state, "Suppression...");
+  setSaveState(state, tr("js.deleting"));
   const response = await fetch("/api/account-delete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -638,12 +700,12 @@ async function deleteAccountRow(row) {
   const result = await response.json();
   if (!result.ok) {
     row.querySelector("[data-setting-value]")?.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   row.remove();
   applyAccountIndexes(document.querySelector('[data-settings-table][data-kind="account"]'), result.rows || []);
-  setSaveState(state, "Supprimé");
+  setSaveState(state, tr("js.deleted"));
 }
 
 function closeAccountMergeLists(exceptList = null) {
@@ -671,20 +733,20 @@ async function mergeAccountRow(button) {
   const result = await response.json();
   if (!result.ok) {
     row.querySelector("[data-setting-value]")?.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   row.remove();
   closeAccountMergeLists();
   applyAccountIndexes(document.querySelector('[data-settings-table][data-kind="account"]'), result.rows || []);
-  setSaveState(state, "Compte fusionné");
+  setSaveState(state, tr("js.account-merged"));
 }
 
 async function reorderAccountRow(row, targetRow, position) {
   if (!row || !targetRow || row === targetRow || row.dataset.newRow === "true") return;
   const state = document.querySelector("[data-save-state]");
   const table = row.closest("[data-settings-table]");
-  setSaveState(state, "Réorganisation...");
+  setSaveState(state, tr("js.reordering"));
   const response = await fetch("/api/account-reorder", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -693,12 +755,12 @@ async function reorderAccountRow(row, targetRow, position) {
   const result = await response.json();
   if (!result.ok) {
     row.querySelector("[data-setting-value]")?.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   applyAccountIndexes(table, result.rows || []);
   flashSavedRow(row);
-  setSaveState(state, "Ordre enregistré");
+  setSaveState(state, tr("js.order-saved"));
 }
 
 function applyAccountIndexes(table, rows) {
@@ -722,7 +784,7 @@ async function saveBudgetRow(row) {
   row.querySelectorAll("[data-budget-field]").forEach((input) => {
     payload[input.dataset.budgetField] = input.value.trim();
   });
-  setSaveState(state, "Enregistrement...");
+  setSaveState(state, tr("js.saving"));
   const response = await fetch("/api/monthly-budget-row", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -731,7 +793,7 @@ async function saveBudgetRow(row) {
   const result = await response.json();
   if (!result.ok) {
     row.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   row.dataset.id = result.id;
@@ -743,7 +805,7 @@ async function saveBudgetRow(row) {
   snapshotBudgetRow(row);
   row.classList.remove("dirty", "save-error");
   setBudgetActions(row, false);
-  setSaveState(state, "Enregistré");
+  setSaveState(state, tr("js.saved"));
 }
 
 async function deleteBudgetRow(row) {
@@ -753,7 +815,7 @@ async function deleteBudgetRow(row) {
     resetSaveState();
     return;
   }
-  setSaveState(state, "Suppression...");
+  setSaveState(state, tr("js.deleting"));
   const response = await fetch("/api/monthly-budget-delete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -762,11 +824,11 @@ async function deleteBudgetRow(row) {
   const result = await response.json();
   if (!result.ok) {
     row.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   row.remove();
-  setSaveState(state, "Supprimé");
+  setSaveState(state, tr("js.deleted"));
 }
 
 function createBudgetRow(table) {
@@ -845,7 +907,7 @@ async function cancelBudgetSchedule(row) {
   row.classList.remove("budget-status-scheduled");
   row.classList.add("budget-status-cancel");
   const status = row.querySelector("[data-budget-status]");
-  if (status) status.textContent = result.status_label || "Annulé";
+  if (status) status.textContent = result.status_label || tr("js.canceled");
   row.querySelector("[data-budget-schedule-cancel]")?.remove();
   row.querySelector("[data-budget-schedule-confirm]")?.remove();
   const list = row.querySelector("[data-budget-account-list]");
@@ -879,7 +941,7 @@ async function instantiateBudgetSchedule(button) {
     row.classList.add("save-error");
     if (output) {
       output.hidden = false;
-      output.textContent = result.error || "Erreur";
+      output.textContent = result.error || tr("js.save-error");
     }
     return;
   }
@@ -887,13 +949,13 @@ async function instantiateBudgetSchedule(button) {
   row.classList.remove("budget-status-scheduled", "budget-status-cancel");
   row.classList.add("budget-status-found");
   const status = row.querySelector("[data-budget-status]");
-  if (status) status.textContent = result.status_label || "Trouvé";
+  if (status) status.textContent = result.status_label || tr("js.found");
   row.querySelector("[data-budget-schedule-cancel]")?.remove();
   row.querySelector("[data-budget-schedule-confirm]")?.remove();
   row.querySelector("[data-budget-account-list]").hidden = true;
   if (output) {
     output.hidden = false;
-    output.innerHTML = `Créé dans <a href="/period/${row.closest("[data-budget-schedule-table]").dataset.periodId}?account=${result.account_id}">${escapeHtml(result.account_name)}</a>, ligne #${escapeHtml(result.sort_index)} (${escapeHtml(result.date)})`;
+    output.innerHTML = `${escapeHtml(tr("js.created-in"))} <a href="/period/${row.closest("[data-budget-schedule-table]").dataset.periodId}?account=${result.account_id}">${escapeHtml(result.account_name)}</a>, ligne #${escapeHtml(result.sort_index)} (${escapeHtml(result.date)})`;
   }
   flashSavedRow(row);
 }
@@ -924,7 +986,7 @@ async function savePeriodRange(range) {
   const state = document.querySelector("[data-save-state]");
   const start = range.querySelector("[data-period-start]");
   const end = range.querySelector("[data-period-end]");
-  setSaveState(state, "Enregistrement...");
+  setSaveState(state, tr("js.saving"));
   const response = await fetch("/api/period-range", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -937,7 +999,7 @@ async function savePeriodRange(range) {
   const result = await response.json();
   if (!result.ok) {
     range.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   if (start) {
@@ -976,7 +1038,7 @@ function cancelPeriodNameEditor(wrapper) {
 async function savePeriodName(wrapper) {
   const state = document.querySelector("[data-save-state]");
   const input = wrapper.querySelector("[data-period-name-input]");
-  setSaveState(state, "Enregistrement...");
+  setSaveState(state, tr("js.saving"));
   const response = await fetch("/api/period-name", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -988,7 +1050,7 @@ async function savePeriodName(wrapper) {
   const result = await response.json();
   if (!result.ok) {
     wrapper.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   if (input) {
@@ -1000,7 +1062,7 @@ async function savePeriodName(wrapper) {
 
 async function deletePeriod(button) {
   const state = document.querySelector("[data-save-state]");
-  setSaveState(state, "Suppression...");
+  setSaveState(state, tr("js.deleting"));
   const response = await fetch("/api/period-delete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1008,7 +1070,7 @@ async function deletePeriod(button) {
   });
   const result = await response.json();
   if (!result.ok) {
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   window.location.reload();
@@ -1025,7 +1087,7 @@ function createBudgetScheduleRow(table) {
     <td class="row-index-cell"><span class="row-index-value">${index}</span></td>
     <td>${labelPickerHtml("", 'data-budget-schedule-field="label"')}</td>
     <td><input class="num" data-budget-schedule-field="amount" inputmode="decimal" placeholder="0"></td>
-    <td><span class="budget-status-pill">Planifié</span></td>
+    <td><span class="budget-status-pill">${tr("period.status-scheduled")}</span></td>
     <td class="row-actions">
       <button type="button" class="row-confirm" data-confirm-budget-schedule-row>V</button>
       <button type="button" class="row-cancel" data-cancel-budget-schedule-row>X</button>
@@ -1046,7 +1108,7 @@ async function saveBudgetScheduleRow(row) {
   const table = row.closest("[data-budget-schedule-table]");
   const label = row.querySelector("[data-label-input]")?.value.trim() || "";
   const amount = row.querySelector('[data-budget-schedule-field="amount"]')?.value.trim() || "";
-  setSaveState(state, "Enregistrement...");
+  setSaveState(state, tr("js.saving"));
   const response = await fetch("/api/budget-schedule-row", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1055,7 +1117,7 @@ async function saveBudgetScheduleRow(row) {
   const result = await response.json();
   if (!result.ok) {
     row.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   window.location.reload();
@@ -1063,7 +1125,7 @@ async function saveBudgetScheduleRow(row) {
 
 async function clearBudgetSchedule(table) {
   const state = document.querySelector("[data-save-state]");
-  setSaveState(state, "Suppression...");
+  setSaveState(state, tr("js.deleting"));
   const response = await fetch("/api/budget-schedule-clear", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1071,7 +1133,7 @@ async function clearBudgetSchedule(table) {
   });
   const result = await response.json();
   if (!result.ok) {
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
   window.location.reload();
@@ -1080,16 +1142,16 @@ async function clearBudgetSchedule(table) {
 function createSettingRow(table) {
   const kind = table.dataset.kind;
   const valueCells = kind === "label"
-    ? `<td><input value="" data-setting-value data-setting-part="group" data-original="" autocomplete="off" placeholder="Nom de groupage"></td>
-    <td><input value="" data-setting-value data-setting-part="subcategory" data-original="" autocomplete="off" placeholder="Sous catégorie"></td>`
-    : `<td><input value="" data-setting-value data-original="" autocomplete="off" placeholder="Nouveau compte"></td>`;
+    ? `<td><input value="" data-setting-value data-setting-part="group" data-original="" autocomplete="off" placeholder="${tr("parameters.group-name")}"></td>
+    <td><input value="" data-setting-value data-setting-part="subcategory" data-original="" autocomplete="off" placeholder="${tr("parameters.subcategory")}"></td>`
+    : `<td><input value="" data-setting-value data-original="" autocomplete="off" placeholder="${tr("parameters.new-account")}"></td>`;
   const row = document.createElement("tr");
   row.dataset.settingsRow = "";
   row.dataset.kind = kind;
   row.dataset.newRow = "true";
   row.className = "dirty";
   row.innerHTML = `
-    ${kind === "account" ? '<td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-account-drag-handle title="Déplacer">↕</button></td>' : ""}
+    ${kind === "account" ? `<td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-account-drag-handle title="${tr("period.move")}">↕</button></td>` : ""}
     ${valueCells}
     ${kind === "account" ? '<td class="center-cell"><input type="checkbox" data-account-summary checked disabled></td><td class="center-cell"><input type="checkbox" data-account-visible-if-empty checked disabled></td>' : ""}
     <td class="row-actions">
@@ -1165,7 +1227,7 @@ function focusSettingDeleteAction(row) {
 function labelPickerHtml(value, attrs) {
   return `<div class="label-picker" data-label-picker>
     <div class="label-picker-row">
-      <input value="${escapeHtml(value)}" data-original="${escapeHtml(value)}" autocomplete="off" placeholder="Ex: Courses - Supermarché" ${attrs} data-label-input>
+      <input value="${escapeHtml(value)}" data-original="${escapeHtml(value)}" autocomplete="off" placeholder="${escapeHtml(tr("filters.label-placeholder"))}" ${attrs} data-label-input>
       <button class="label-add" type="button" data-create-label hidden>+</button>
     </div>
     <div class="label-suggestions" data-label-suggestions hidden></div>
@@ -1211,7 +1273,7 @@ function addLabelName(name) {
   window.BUDGET_LABELS = labelNames();
   if (!window.BUDGET_LABELS.some((label) => normalized(label) === normalized(name))) {
     window.BUDGET_LABELS.push(name);
-    window.BUDGET_LABELS.sort((a, b) => a.localeCompare(b));
+    window.BUDGET_LABELS.sort((a, b) => a.localeCompare(b, displayLocale()));
   }
 }
 
@@ -1221,7 +1283,7 @@ async function createLabelFromPicker(picker) {
   const value = input.value.trim();
   if (!value) return;
 
-  setSaveState(state, "Création de l'intitulé...");
+  setSaveState(state, tr("js.label-creating"));
   const response = await fetch("/api/label-from-text", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1230,7 +1292,7 @@ async function createLabelFromPicker(picker) {
   const result = await response.json();
   if (!result.ok) {
     input.classList.add("save-error");
-    setSaveState(state, result.error || "Erreur", true);
+    setSaveState(state, result.error || tr("js.save-error"), true);
     return;
   }
 
@@ -1578,6 +1640,14 @@ document.addEventListener("keydown", async (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  const languageSelect = event.target.closest("[data-language-selector]");
+  if (languageSelect) {
+    updateLanguageSelector(languageSelect);
+    setLongLivedCookie("budget_language", languageSelect.value);
+    window.location.reload();
+    return;
+  }
+
   const accountSummary = event.target.closest("[data-account-summary]");
   if (accountSummary) {
     saveAccountSummary(accountSummary);
@@ -1604,9 +1674,9 @@ document.addEventListener("change", (event) => {
     };
     const dateExample = dateExamples[dateFormatSelect?.value] || dateExamples.dmy;
     const placeholders = {
-      csv_header: `Date,Intitulé,Montant,commentaire\n${dateExample},Exemple,-12.50,Note`,
+      csv_header: `${tr("common.date")},${tr("common.label")},${tr("common.amount")},${tr("common.comment")}\n${dateExample},Exemple,-12.50,Note`,
       csv_no_header: `${dateExample},Exemple,-12.50,Note`,
-      tsv_header: `Date\tIntitulé\tMontant\tcommentaire\n${dateExample}\tExemple\t-12.50\tNote`,
+      tsv_header: `${tr("common.date")}\t${tr("common.label")}\t${tr("common.amount")}\t${tr("common.comment")}\n${dateExample}\tExemple\t-12.50\tNote`,
       tsv_no_header: `${dateExample}\tExemple\t-12.50\tNote`,
     };
     textarea.placeholder = placeholders[formatSelect?.value] || "";

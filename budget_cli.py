@@ -21,6 +21,7 @@ import typer
 
 from config import normalize_import_name
 import database
+from user_preferences import ensure_user_preferences
 
 
 ROOT = Path(__file__).resolve().parent
@@ -48,9 +49,11 @@ XLSX_NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 REL_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 EXCEL_EPOCH = date(1899, 12, 30)
 PERIOD_SHEET_SKIP = {"budget", "feuil1"}
-FULL_EXPORT_VERSION = "2"
+FULL_EXPORT_VERSION = "4"
 FULL_EXPORT_TABLES = [
     ("users", ["id", "email", "hashed_password", "is_active", "is_superuser", "is_verified", "last_login"]),
+    ("user_profiles", ["id", "user_id", "locale", "date_format", "number_decimals"]),
+    ("profile_seeded", ["id", "user_id", "seed_key", "seeded_at"]),
     ("period", ["id", "user_id", "name", "start_date", "end_date"]),
     ("accounts", ["id", "user_id", "name", "sort_index", "show_in_summary", "visible_if_empty"]),
     ("transaction_labels", ["id", "user_id", "name"]),
@@ -62,8 +65,10 @@ FULL_EXPORT_TABLES = [
         ["id", "user_id", "period_id", "account_id", "date", "label", "amount", "sort_index", "comment", "created_at", "updated_at"],
     ),
 ]
-USER_EXPORT_VERSION = "1"
+USER_EXPORT_VERSION = "3"
 USER_EXPORT_TABLES = [
+    ("user_profiles", ["id", "locale", "date_format", "number_decimals"]),
+    ("profile_seeded", ["id", "seed_key", "seeded_at"]),
     ("period", ["id", "name", "start_date", "end_date"]),
     ("accounts", ["id", "name", "sort_index", "show_in_summary", "visible_if_empty"]),
     ("transaction_labels", ["id", "name"]),
@@ -83,6 +88,7 @@ INTEGER_COLUMNS = {
     "show_in_summary",
     "visible_if_empty",
     "day",
+    "number_decimals",
 }
 FLOAT_COLUMNS = {"amount", "opening"}
 
@@ -398,6 +404,8 @@ def export_full_database(db_path: Path, export_path: Path, backend: str = "sqlit
             )
         ]
         summary: dict[str, int] = {}
+        for user in conn.execute("SELECT id FROM users").fetchall():
+            ensure_user_preferences(conn, user["id"])
         for table_name, columns in FULL_EXPORT_TABLES:
             rows = conn.execute(f"SELECT {', '.join(columns)} FROM {table_name} ORDER BY id").fetchall()
             sheets.append((table_name, [columns, *[[row[column] for column in columns] for row in rows]]))
@@ -413,6 +421,9 @@ def import_full_database(db_path: Path, import_path: Path, backend: str = "sqlit
         database.clear_all_data(conn)
         summary: dict[str, int] = {}
         for table_name, columns in FULL_EXPORT_TABLES:
+            if table_name not in sheets:
+                summary[table_name] = 0
+                continue
             rows = full_import_rows(sheets[table_name], columns)
             if rows:
                 placeholders = ", ".join("?" for _ in columns)
@@ -459,6 +470,7 @@ def user_export_sheets(
         )
     ]
     summary: dict[str, int] = {}
+    ensure_user_preferences(conn, user_id)
     for table_name, columns in USER_EXPORT_TABLES:
         rows = conn.execute(
             f"SELECT {', '.join(columns)} FROM {table_name} WHERE user_id = ? ORDER BY id",
@@ -499,7 +511,12 @@ def import_user_database_bytes(
 
 
 def validate_user_import(sheets: dict[str, WorkbookSheet]) -> None:
-    missing = [table_name for table_name, _columns in USER_EXPORT_TABLES if table_name not in sheets]
+    required_tables = [
+        (table_name, columns)
+        for table_name, columns in USER_EXPORT_TABLES
+        if table_name != "user_profiles"
+    ]
+    missing = [table_name for table_name, _columns in required_tables if table_name not in sheets]
     if "_meta" not in sheets:
         missing.insert(0, "_meta")
     if missing:
@@ -508,7 +525,7 @@ def validate_user_import(sheets: dict[str, WorkbookSheet]) -> None:
     meta_values = {str(row.get("key") or ""): str(row.get("value") or "") for row in meta}
     if meta_values.get("format") != "budget-user-export":
         raise ValueError("Le classeur n'est pas un export utilisateur Budget.")
-    if meta_values.get("version") != USER_EXPORT_VERSION:
+    if meta_values.get("version") not in {"1", "2", USER_EXPORT_VERSION}:
         raise ValueError(f"Version d'export utilisateur non supportée: {meta_values.get('version') or '-'}")
 
 
@@ -520,6 +537,36 @@ def import_user_sheets(
     clear_user_data(conn, user_id)
     id_maps: dict[str, dict[int, int]] = {"period": {}, "accounts": {}}
     summary: dict[str, int] = {}
+
+    profile_rows = (
+        full_import_rows(sheets["user_profiles"], ["id", "locale", "date_format", "number_decimals"])
+        if "user_profiles" in sheets
+        else []
+    )
+    for _old_id, locale, date_format, number_decimals in profile_rows[:1]:
+        conn.execute(
+            """
+            INSERT INTO user_profiles(user_id, locale, date_format, number_decimals)
+            VALUES (?, ?, ?, ?)
+            """,
+            (user_id, locale, date_format, number_decimals),
+        )
+    summary["user_profiles"] = len(profile_rows[:1])
+
+    seeded_rows = (
+        full_import_rows(sheets["profile_seeded"], ["id", "seed_key", "seeded_at"])
+        if "profile_seeded" in sheets
+        else []
+    )
+    for _old_id, seed_key, seeded_at in seeded_rows:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO profile_seeded(user_id, seed_key, seeded_at)
+            VALUES (?, ?, ?)
+            """,
+            (user_id, seed_key, seeded_at),
+        )
+    summary["profile_seeded"] = len(seeded_rows)
 
     period_rows = full_import_rows(sheets["period"], ["id", "name", "start_date", "end_date"])
     for old_id, name, start_date, end_date in period_rows:
@@ -620,6 +667,8 @@ def clear_user_data(conn: sqlite3.Connection | database.MySQLConnection, user_id
         "transaction_labels",
         "accounts",
         "period",
+        "profile_seeded",
+        "user_profiles",
     ):
         conn.execute(f"DELETE FROM {table_name} WHERE user_id = ?", (user_id,))
 
@@ -654,7 +703,6 @@ def create_user(db_path: Path, email: str, password: str, backend: str = "sqlite
             """,
             (user_id, email.strip().lower(), password_hash),
         )
-        database.ensure_user_data(conn, user_id)
         conn.commit()
     return {"id": user_id, "email": email.strip().lower()}
 
@@ -766,7 +814,12 @@ def print_workbook_import_summary(summary: dict[str, object]) -> None:
 
 
 def validate_full_import(sheets: dict[str, WorkbookSheet]) -> None:
-    missing = [table_name for table_name, _columns in FULL_EXPORT_TABLES if table_name not in sheets]
+    required_tables = [
+        (table_name, columns)
+        for table_name, columns in FULL_EXPORT_TABLES
+        if table_name not in {"user_profiles", "profile_seeded"}
+    ]
+    missing = [table_name for table_name, _columns in required_tables if table_name not in sheets]
     if "_meta" not in sheets:
         missing.insert(0, "_meta")
     if missing:
@@ -775,7 +828,7 @@ def validate_full_import(sheets: dict[str, WorkbookSheet]) -> None:
     meta_values = {str(row.get("key") or ""): str(row.get("value") or "") for row in meta}
     if meta_values.get("format") != "budget-full-export":
         raise ValueError("Le classeur n'est pas un export complet Budget.")
-    if meta_values.get("version") != FULL_EXPORT_VERSION:
+    if meta_values.get("version") not in {"2", "3", FULL_EXPORT_VERSION}:
         raise ValueError(f"Version d'export non supportée: {meta_values.get('version') or '-'}")
 
 
@@ -982,10 +1035,10 @@ def import_workbook(db_path: Path, workbook_path: Path, backend: str = "sqlite",
                 sort_indexes[account_id] = sort_index
                 conn.execute(
                     """
-                    INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, sort_index)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, sort_index, comment)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (user_id, period_id, account_id, tx.tx_date, tx.label, tx.amount, sort_index),
+                    (user_id, period_id, account_id, tx.tx_date, tx.label, tx.amount, sort_index, ""),
                 )
                 transaction_count += 1
         conn.commit()

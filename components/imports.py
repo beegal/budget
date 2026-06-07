@@ -12,7 +12,7 @@ def validation_view(validation: dict[str, object] | None) -> dict[str, object] |
                 "date": row["date"],
                 "label": row["label"],
                 "amount": row["amount"],
-                "comment": row["comment"],
+                "comment": row["comment"] or "",
                 "errors": "; ".join(row["errors"]),
                 "row_class": "import-row-error" if row["errors"] else "",
             }

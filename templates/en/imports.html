@@ -1,0 +1,73 @@
+<section class="page-title">
+  <div>
+    <p class="eyebrow">{{ period_label }}</p>
+    <h1>CSV import</h1>
+  </div>
+  <a class="button ghost" href="/period/{{ period_id }}?account={{ account_id }}">Back to account</a>
+</section>
+<section class="panel narrow">
+  <dl class="import-context">
+    <div><dt>Account</dt><dd>{{ account_name }}</dd></div>
+    <div><dt>Period</dt><dd>{{ period_name }}</dd></div>
+    <div><dt>Valid dates</dt><dd>{{ period_start_date }} &lt;= date{% if period_end_date %} &lt;= {{ period_end_date }}{% endif %}</dd></div>
+  </dl>
+  <form method="post" action="/period/{{ period_id }}/import" class="import-form">
+    <input type="hidden" name="account_id" value="{{ account_id }}">
+    <div class="form-row">
+      <label>Date format
+        <select name="date_format" data-import-date-format>
+          <option value="dmy"{% if date_format == "dmy" %} selected{% endif %}>jj/mm/yy</option>
+          <option value="mdy"{% if date_format == "mdy" %} selected{% endif %}>mm/jj/yy</option>
+          <option value="ymd"{% if date_format == "ymd" %} selected{% endif %}>yy-mm-jj</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-row">
+      <label>Format
+        <select name="format" data-import-format>
+          <option value="csv_header"{% if format_value == "csv_header" %} selected{% endif %}>CSV with header</option>
+          <option value="csv_no_header"{% if format_value == "csv_no_header" %} selected{% endif %}>CSV without header</option>
+          <option value="tsv_header"{% if format_value == "tsv_header" %} selected{% endif %}>TSV with header</option>
+          <option value="tsv_no_header"{% if format_value == "tsv_no_header" %} selected{% endif %}>TSV without header</option>
+        </select>
+      </label>
+    </div>
+    <label>Data to import
+      <textarea name="csv_import" rows="12" data-import-textarea placeholder="Date,Label,Amount,Comment&#10;03/26/2026,Groceries - Example,-12.50,Note">{{ raw_csv }}</textarea>
+    </label>
+    <div class="form-actions">
+      <button name="action" value="validate">Validation</button>
+      {% if validation %}
+      <button name="action" value="import"{% if validation.problem_count %} disabled{% endif %}>Import</button>
+      {% endif %}
+    </div>
+  </form>
+  {% if validation %}
+  <div class="import-validation">
+    <h2>File to import</h2>
+    <table>
+      <thead><tr><th>#</th><th>Date</th><th>Label</th><th>Amount</th><th>Comment</th><th>Error</th></tr></thead>
+      <tbody>
+        {% for row in validation.rows %}
+        <tr{% if row.row_class %} class="{{ row.row_class }}"{% endif %}>
+          <td>{{ row.line }}</td>
+          <td>{{ row.date }}</td>
+          <td>{{ row.label }}</td>
+          <td>{{ row.amount }}</td>
+          <td>{{ row.comment }}</td>
+          <td>{{ row.errors }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">No row to validate.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="import-result">
+      <div><span>Correct records</span><strong>{{ validation.correct_count }}</strong></div>
+      <div><span>Problem records</span><strong class="{{ validation.problem_class }}">{{ validation.problem_count }}</strong></div>
+      <div><span>Existing labels</span><strong>{{ validation.existing_label_count }}</strong></div>
+      <div><span>Labels to create</span><strong>{{ validation.create_label_count }}</strong></div>
+    </div>
+  </div>
+  {% endif %}
+</section>

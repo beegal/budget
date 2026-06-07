@@ -7,6 +7,7 @@ from fastapi_users.password import PasswordHelper
 
 import database
 from database import db
+from i18n import translate
 from web_helpers import one, render_template, user_layout
 
 
@@ -38,21 +39,21 @@ def page(current_user_id: str, query: str = "") -> bytes:
         current_user_id=current_user_id,
         error=params.get("error", [""])[0],
     )
-    return user_layout("Administration", body, current_user_id)
+    return user_layout(translate("admin.title"), body, current_user_id)
 
 
 def create_user(data: dict[str, list[str]]) -> str:
     email = one(data, "email").lower()
     password = one(data, "password")
     if not email:
-        raise ValueError("L'email est obligatoire.")
+        raise ValueError(translate("errors.email-required"))
     if len(password) < 8:
-        raise ValueError("Le mot de passe doit contenir au moins 8 caractères.")
+        raise ValueError(translate("errors.password-min-length"))
     user_id = str(uuid.uuid4())
     with db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (email,)).fetchone()
         if existing is not None:
-            raise ValueError("Cet utilisateur existe déjà.")
+            raise ValueError(translate("errors.user-already-exists"))
         conn.execute(
             """
             INSERT INTO users(id, email, hashed_password, is_active, is_superuser, is_verified, last_login)
@@ -66,7 +67,6 @@ def create_user(data: dict[str, list[str]]) -> str:
                 1 if data.get("is_superuser", ["0"])[-1] == "1" else 0,
             ),
         )
-        database.ensure_user_data(conn, user_id)
     return "/admin"
 
 
@@ -74,7 +74,7 @@ def set_password(data: dict[str, list[str]]) -> str:
     user_id = one(data, "user_id")
     password = one(data, "password")
     if len(password) < 8:
-        raise ValueError("Le mot de passe doit contenir au moins 8 caractères.")
+        raise ValueError(translate("errors.password-min-length"))
     with db() as conn:
         conn.execute("UPDATE users SET hashed_password = ? WHERE id = ?", (password_helper.hash(password), user_id))
     return "/admin"
@@ -83,7 +83,7 @@ def set_password(data: dict[str, list[str]]) -> str:
 def set_active(data: dict[str, list[str]], current_user_id: str) -> str:
     user_id = one(data, "user_id")
     if user_id == current_user_id:
-        raise ValueError("Impossible de désactiver ton propre utilisateur.")
+        raise ValueError(translate("admin.self-disable-forbidden"))
     with db() as conn:
         conn.execute("UPDATE users SET is_active = ? WHERE id = ?", (1 if one(data, "enabled") == "1" else 0, user_id))
     return "/admin"
@@ -92,7 +92,7 @@ def set_active(data: dict[str, list[str]], current_user_id: str) -> str:
 def set_admin(data: dict[str, list[str]], current_user_id: str) -> str:
     user_id = one(data, "user_id")
     if user_id == current_user_id and one(data, "enabled") != "1":
-        raise ValueError("Impossible de retirer ton propre accès admin.")
+        raise ValueError(translate("admin.self-admin-remove-forbidden"))
     with db() as conn:
         conn.execute("UPDATE users SET is_superuser = ? WHERE id = ?", (1 if one(data, "enabled") == "1" else 0, user_id))
     return "/admin"

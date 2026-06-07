@@ -1,0 +1,211 @@
+app:
+  name: Personal Finance
+nav:
+  periods: Périodes
+  parameters: Paramètres
+  transactions: Transactions
+  summary: Synthèse
+  profile: Profil
+  admin: Admin
+  logout: Déconnexion
+common:
+  actions: Actions
+  account: Compte
+  accounts: Comptes
+  period: Période
+  periods: Périodes
+  label: Intitulé
+  labels: Intitulés
+  date: Date
+  amount: Montant
+  comment: Commentaire
+  total: Total
+  refresh: Rafraîchir
+  save: Enregistrer
+  export: Export
+  import: Import
+  back-to-account: Retour au compte
+  debit: Débit
+  credit: Crédit
+  net: Net
+  income: Entrées
+  expense: Sorties
+  all-feminine: Toutes
+  all-masculine: Tous
+  remove: Retirer {name}
+auth:
+  login-title: Connexion
+  login-help: Connecte-toi pour accéder à ton budget.
+  password: Mot de passe
+  login-button: Connexion
+  create-account-link: Créer un compte
+  register-title: Créer un compte
+  register-help: "Registration rapide: email, mot de passe, et c'est parti."
+  register-button: Créer le compte
+  already-registered: Déjà inscrit
+profile:
+  title: Profil
+  display-preferences: Préférences d'affichage
+  date-format: Format d'affichage des dates
+  number-decimals: Décimales des nombres
+parameters:
+  title: Paramètres
+  account: Compte
+  summary: Synthèse
+  visible-if-empty: "Visible<br>si vide"
+  group-name: Nom de groupage
+  subcategory: Sous catégorie
+  new-account: Nouveau compte
+  merge-account: Fusionner vers un autre compte
+  delete-account: Supprimer le compte
+  delete-account-blocked: Impossible de supprimer le compte car il contient {transactions} transaction(s)
+  monthly-budget: Budget mensuel
+  day: Jour
+  user-backup: Sauvegarde utilisateur
+  label-help: "Sauvegardé comme \"Nom de groupage - Sous catégorie\"."
+admin:
+  add-user: Ajouter un utilisateur
+  create: Créer
+  cancel: Annuler
+  title: Administration
+  users: Utilisateurs
+  last-login: Dernière connexion
+  active: Actif
+  disable: Désactiver
+  enable: Activer
+  remove-admin: Retirer admin
+  make-admin: Rendre admin
+  new-password: Nouveau mot de passe
+  change-password: Changer
+  self-disable-forbidden: Impossible de désactiver ton propre utilisateur.
+  self-admin-remove-forbidden: Impossible de retirer ton propre accès admin.
+errors:
+  period-not-found: Période introuvable
+  account-not-found: Compte introuvable
+  start-date-required: Début de période manquant
+  delete-period-blocked: Supprimer {transactions} transaction(s) et {budgets} entrée(s) de budget avant de supprimer cette période.
+  unknown-date-format: Format de date inconnu
+  invalid-date: "Date invalide: {value}"
+  label-required: Intitulé obligatoire
+  label-not-found: Intitulé introuvable
+  invalid-amount: Montant invalide
+  date-required: Date obligatoire
+  invalid-date-for-format: "Date invalide pour le format {format}: {value}"
+  endpoint-not-found: Endpoint introuvable
+  transaction-not-found: Transaction introuvable
+  invalid-index: Index invalide
+  date-min: La date doit être >= {date}
+  date-max: La date doit être <= {date}
+  field-not-allowed: Champ non autorisé
+  start-date-value-required: Date de début obligatoire
+  name-required: Nom obligatoire
+  invalid-position: Position invalide
+  invalid-move: Déplacement invalide
+  invalid-day: Jour invalide
+  budget-entry-not-found: Entrée budget introuvable
+  budget-entry-not-scheduled: Cette entrée n'est plus planifiée
+  value-required: Valeur obligatoire
+  email-required: L'email est obligatoire.
+  password-min-length: Le mot de passe doit contenir au moins 8 caractères.
+  user-already-exists: Cet utilisateur existe déjà.
+  different-account-required: Choisis un compte différent
+transactions:
+  title: Transactions
+  no-transaction: Aucune transaction.
+  total-row: Total
+summary:
+  title: Synthèse
+  by-label: Entrées / sorties par intitulé
+  grouped-label-tooltip: Regroupé par le texte avant "-".
+imports:
+  title: Import CSV
+  valid-dates: Dates valides
+  date-format: Format de date
+  format: Format
+  csv-header: CSV avec en-tête
+  csv-no-header: CSV sans en-tête
+  tsv-header: TSV avec en-tête
+  tsv-no-header: TSV sans en-tête
+  data-to-import: Données à importer
+  validation: Validation
+  importation: Importation
+  file-to-import: Fichier à importer
+  error: Erreur
+  no-row-to-validate: Aucune ligne à valider.
+  correct-records: Records corrects
+  problem-records: Records problématiques
+  existing-labels: Intitulés existants
+  labels-to-create: Intitulés à créer
+filters:
+  period-placeholder: Filtre périodes
+  account-placeholder: Filtre comptes
+  label-placeholder: Ex: Courses - Supermarché
+js:
+  login-progress: Connexion...
+  invalid-login: Email ou mot de passe invalide
+  register-error: Création du compte impossible
+  saving: Enregistrement...
+  saved: Enregistré
+  save-error: Erreur
+  deleting: Suppression...
+  deleted: Supprimé
+  login-error: Erreur de connexion
+  account-merged: Compte fusionné
+  order-saved: Ordre enregistré
+  label-creating: Création de l'intitulé...
+  reordering: Réorganisation...
+  canceled: Annulé
+  found: Trouvé
+  balance: Solde
+  unknown-balance: "Solde: inconnu"
+  current-balance: Solde actuel
+  total-operations: Total opérations
+  created-in: Créé dans
+periods:
+  open: Ouvrir
+  create-title: Créer une période
+  name-placeholder: Nom de la période
+  from: du
+  current: en cours
+  edit-dates: Modifier les dates
+  edit-name: Modifier le nom
+  delete-period: Supprimer la période
+  delete-period-blocked: Supprimer {transactions} transaction(s) et {budgets} entrée(s) de budget avant de supprimer cette période.
+  free-period: Période libre
+  end-after-start: La date de fin doit être après la date de début.
+  overlap: Chevauche la période {name} ({period}).
+period:
+  overview: Synthèse
+  budget: Budget
+  all-periods: Toutes les périodes
+  add-account: Ajouter un compte
+  balances-by-account: Soldes par compte
+  opening: Début
+  movements: Mouvements
+  current: Actuel
+  no-balance: Aucun solde saisi.
+  transfers: Transferts
+  no-transfer: Aucun transfert.
+  no-planned-entry: Aucune entrée planifiée.
+  add-budget-entry: Ajouter une entrée budget
+  clear-budget: Supprimer toutes les entrées budget
+  move: Déplacer
+  add-row: Ajouter une ligne
+  remove-all-rows: Supprimer toutes les lignes
+  import-csv: Importer CSV
+  missing-account: Compte introuvable
+  unknown: inconnu
+  balance: Solde
+  current-balance: Solde actuel
+  total-operations: Total opérations
+  status-scheduled: Planifié
+  status-found: Trouvé
+  status-canceled: Annulé
+  cancel-scheduled: Annuler cette entrée prévue
+  send-to-account: Envoyer vers un compte
+  hide-account: Retirer ce compte des onglets
+  hide-account-blocked: Impossible de supprimer le compte car il contient {transactions} transaction(s)
+  transaction-count: "{transactions} transaction(s) pour un total de {amount}"
+  date-not-recognized: La date de cette transaction n'est pas reconnue.
+  date-before-period: "Date hors période: {date} est avant le début {start}."
+  date-after-period: "Date hors période: {date} est après la fin {end}."

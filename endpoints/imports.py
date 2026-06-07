@@ -8,9 +8,11 @@ from urllib.parse import parse_qs
 
 from components.common import panel_message
 from components.imports import validation_view
-from config import DATE_FORMAT, normalize_import_name
+from config import normalize_import_name
 from database import db
 from endpoints import api
+from i18n import translate
+from user_preferences import current_date_format
 from web_helpers import format_date, parse_month, period_label, render_template, user_layout
 
 
@@ -31,7 +33,7 @@ def page(period_id: int, query: str, user_id: str) -> bytes:
             (account_id, user_id),
         ).fetchone() if account_id else None
     if period is None or account is None:
-        return user_layout("Import introuvable", panel_message("Import introuvable"), user_id)
+        return user_layout(translate("imports.title"), panel_message(translate("imports.title")), user_id)
     return page_html(period, account, "", default_date_format(), "csv_header")
 
 
@@ -58,7 +60,7 @@ def page_html(
         format_value=format_value,
         validation=validation_view(validation),
     )
-    return user_layout("Import CSV", body, str(period["user_id"]))
+    return user_layout(translate("imports.title"), body, str(period["user_id"]))
 
 
 def submit(period_id: int, data: dict[str, list[str]], user_id: str) -> str | bytes:
@@ -106,7 +108,7 @@ def csv_rows(raw_csv: str, format_value: str = "csv_header") -> list[list[str]]:
 
 
 def default_date_format() -> str:
-    return DATE_FORMAT
+    return current_date_format()
 
 
 def parse_import_year(value: str) -> int:
@@ -119,7 +121,7 @@ def parse_import_year(value: str) -> int:
 def normalize_import_date(value: object, date_format: str = "dmy", default_year: int | None = None) -> str:
     raw = str(value or "").strip()
     if not raw:
-        raise ValueError("Date obligatoire")
+        raise ValueError(translate("errors.date-required"))
     if date_format not in DATE_FORMAT_LABELS:
         date_format = default_date_format()
     normalized = raw
@@ -127,7 +129,7 @@ def normalize_import_date(value: object, date_format: str = "dmy", default_year:
         normalized = normalized.replace(separator, "/")
     parts = [part.strip() for part in normalized.split("/") if part.strip()]
     if len(parts) not in {2, 3}:
-        raise ValueError(f"Date invalide pour le format {DATE_FORMAT_LABELS[date_format]}: {value}")
+        raise ValueError(translate("errors.invalid-date-for-format", format=DATE_FORMAT_LABELS[date_format], value=value))
     try:
         if len(parts) == 2:
             year = default_year or date.today().year
@@ -146,7 +148,7 @@ def normalize_import_date(value: object, date_format: str = "dmy", default_year:
             year = parse_import_year(parts[2])
         return date(year, month, day).isoformat()
     except ValueError:
-        raise ValueError(f"Date invalide pour le format {DATE_FORMAT_LABELS[date_format]}: {value}")
+        raise ValueError(translate("errors.invalid-date-for-format", format=DATE_FORMAT_LABELS[date_format], value=value))
 
 
 def parse_import_day_month(parts: list[str], date_format: str) -> tuple[int, int]:
@@ -217,9 +219,9 @@ def validate_csv(period_id: int, raw_csv: str, date_format: str = "dmy", format_
             try:
                 float(amount_value.replace(",", "."))
             except ValueError:
-                errors.append("Montant invalide")
+                errors.append(translate("errors.invalid-amount"))
             if not label:
-                errors.append("Intitulé obligatoire")
+                errors.append(translate("errors.label-required"))
             elif label.lower() not in existing_labels:
                 labels_to_create.add(label.lower())
             parsed_rows.append(

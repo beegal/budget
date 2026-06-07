@@ -1,0 +1,146 @@
+app:
+  name: Personal Finance
+nav:
+  periods: Periods
+  parameters: Settings
+  transactions: Transactions
+  summary: Summary
+  profile: Profile
+  admin: Admin
+  logout: Logout
+js:
+  login-progress: Logging in...
+  invalid-login: Invalid email or password
+  register-error: Account creation failed
+  saving: Saving...
+  saved: Saved
+  save-error: Error
+  deleting: Deleting...
+  deleted: Deleted
+  login-error: Login error
+  account-merged: Account merged
+  order-saved: Order saved
+  label-creating: Creating label...
+  reordering: Reordering...
+  canceled: Canceled
+  found: Found
+  balance: Balance
+  unknown-balance: "Balance: unknown"
+  current-balance: Current balance
+  total-operations: Total operations
+  created-in: Created in
+common:
+  date: Date
+  label: Label
+  amount: Amount
+  comment: Comment
+  account: Account
+  total: Total
+filters:
+  label-placeholder: "Ex: Groceries - Supermarket"
+parameters:
+  group-name: Group name
+  subcategory: Subcategory
+  new-account: New account
+  merge-account: Merge into another account
+  delete-account: Delete account
+  delete-account-blocked: Cannot delete the account because it contains {transactions} transaction(s)
+admin:
+  add-user: Add user
+  create: Create
+  cancel: Cancel
+  title: Administration
+  users: Users
+  last-login: Last login
+  active: Active
+  disable: Disable
+  enable: Enable
+  remove-admin: Remove admin
+  make-admin: Make admin
+  new-password: New password
+  change-password: Change
+  self-disable-forbidden: Cannot disable your own user.
+  self-admin-remove-forbidden: Cannot remove your own admin access.
+errors:
+  period-not-found: Period not found
+  account-not-found: Account not found
+  start-date-required: Period start is missing
+  delete-period-blocked: Delete {transactions} transaction(s) and {budgets} budget entrie(s) before deleting this period.
+  unknown-date-format: Unknown date format
+  invalid-date: "Invalid date: {value}"
+  label-required: Label is required
+  label-not-found: Label not found
+  invalid-amount: Invalid amount
+  date-required: Date is required
+  invalid-date-for-format: "Invalid date for format {format}: {value}"
+  endpoint-not-found: Endpoint not found
+  transaction-not-found: Transaction not found
+  invalid-index: Invalid index
+  date-min: Date must be >= {date}
+  date-max: Date must be <= {date}
+  field-not-allowed: Field is not allowed
+  start-date-value-required: Start date is required
+  name-required: Name is required
+  invalid-position: Invalid position
+  invalid-move: Invalid move
+  invalid-day: Invalid day
+  budget-entry-not-found: Budget entry not found
+  budget-entry-not-scheduled: This entry is no longer scheduled
+  value-required: Value is required
+  email-required: Email is required.
+  password-min-length: Password must contain at least 8 characters.
+  user-already-exists: This user already exists.
+  different-account-required: Choose a different account
+profile:
+  title: Profile
+  display-preferences: Display preferences
+  date-format: Date display format
+  number-decimals: Number decimals
+periods:
+  open: Open
+  create-title: Create period
+  name-placeholder: Period name
+  from: from
+  current: current
+  edit-dates: Edit dates
+  edit-name: Edit name
+  delete-period: Delete period
+  delete-period-blocked: Delete {transactions} transaction(s) and {budgets} budget entrie(s) before deleting this period.
+  free-period: Free period
+  end-after-start: The end date must be after the start date.
+  overlap: Overlaps period {name} ({period}).
+period:
+  overview: Summary
+  budget: Budget
+  all-periods: All periods
+  add-account: Add account
+  balances-by-account: Balances by account
+  opening: Opening
+  movements: Transactions
+  current: Current
+  no-balance: No balance entered.
+  transfers: Transfers
+  no-transfer: No transfer.
+  no-planned-entry: No scheduled entry.
+  add-budget-entry: Add budget entry
+  clear-budget: Clear all budget entries
+  move: Move
+  add-row: Add row
+  remove-all-rows: Delete all rows
+  import-csv: Import CSV
+  missing-account: Account not found
+  unknown: unknown
+  balance: Balance
+  current-balance: Current balance
+  total-operations: Total operations
+  status-scheduled: Scheduled
+  status-found: Found
+  status-canceled: Canceled
+  cancel-scheduled: Cancel this scheduled entry
+  send-to-account: Send to account
+  hide-account: Remove this account from tabs
+  hide-account-blocked: Cannot delete the account because it contains {transactions} transaction(s)
+  transaction-count: "{transactions} transaction(s) for a total of {amount}"
+  date-not-recognized: This transaction date is not recognized.
+  date-before-period: "Out-of-period date: {date} is before the start {start}."
+  date-after-period: "Out-of-period date: {date} is after the end {end}."

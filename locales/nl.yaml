@@ -1,0 +1,146 @@
+app:
+  name: Personal Finance
+nav:
+  periods: Periodes
+  parameters: Instellingen
+  transactions: Transacties
+  summary: Overzicht
+  profile: Profiel
+  admin: Admin
+  logout: Afmelden
+js:
+  login-progress: Aanmelden...
+  invalid-login: E-mail of wachtwoord ongeldig
+  register-error: Account kan niet worden aangemaakt
+  saving: Opslaan...
+  saved: Opgeslagen
+  save-error: Fout
+  deleting: Verwijderen...
+  deleted: Verwijderd
+  login-error: Aanmeldfout
+  account-merged: Rekening samengevoegd
+  order-saved: Volgorde opgeslagen
+  label-creating: Rubriek wordt aangemaakt...
+  reordering: Opnieuw ordenen...
+  canceled: Geannuleerd
+  found: Gevonden
+  balance: Saldo
+  unknown-balance: "Saldo: onbekend"
+  current-balance: Huidig saldo
+  total-operations: Totaal verrichtingen
+  created-in: Aangemaakt in
+common:
+  date: Datum
+  label: Rubriek
+  amount: Bedrag
+  comment: Opmerking
+  account: Rekening
+  total: Totaal
+filters:
+  label-placeholder: "Bijv.: Boodschappen - Supermarkt"
+parameters:
+  group-name: Groepsnaam
+  subcategory: Subcategorie
+  new-account: Nieuwe rekening
+  merge-account: Samenvoegen naar een andere rekening
+  delete-account: Rekening verwijderen
+  delete-account-blocked: De rekening kan niet worden verwijderd omdat ze {transactions} transactie(s) bevat
+admin:
+  add-user: Gebruiker toevoegen
+  create: Maken
+  cancel: Annuleren
+  title: Administratie
+  users: Gebruikers
+  last-login: Laatste aanmelding
+  active: Actief
+  disable: Deactiveren
+  enable: Activeren
+  remove-admin: Admin verwijderen
+  make-admin: Admin maken
+  new-password: Nieuw wachtwoord
+  change-password: Wijzigen
+  self-disable-forbidden: Je kunt je eigen gebruiker niet deactiveren.
+  self-admin-remove-forbidden: Je kunt je eigen adminrechten niet verwijderen.
+errors:
+  period-not-found: Periode niet gevonden
+  account-not-found: Rekening niet gevonden
+  start-date-required: Begin van periode ontbreekt
+  delete-period-blocked: Verwijder eerst {transactions} transactie(s) en {budgets} budgetitem(s).
+  unknown-date-format: Onbekend datumformaat
+  invalid-date: "Ongeldige datum: {value}"
+  label-required: Rubriek is verplicht
+  label-not-found: Rubriek niet gevonden
+  invalid-amount: Ongeldig bedrag
+  date-required: Datum is verplicht
+  invalid-date-for-format: "Ongeldige datum voor formaat {format}: {value}"
+  endpoint-not-found: Endpoint niet gevonden
+  transaction-not-found: Transactie niet gevonden
+  invalid-index: Ongeldige index
+  date-min: Datum moet >= {date} zijn
+  date-max: Datum moet <= {date} zijn
+  field-not-allowed: Veld is niet toegestaan
+  start-date-value-required: Begindatum is verplicht
+  name-required: Naam is verplicht
+  invalid-position: Ongeldige positie
+  invalid-move: Ongeldige verplaatsing
+  invalid-day: Ongeldige dag
+  budget-entry-not-found: Budgetitem niet gevonden
+  budget-entry-not-scheduled: Dit item is niet meer gepland
+  value-required: Waarde is verplicht
+  email-required: E-mail is verplicht.
+  password-min-length: Het wachtwoord moet minstens 8 tekens bevatten.
+  user-already-exists: Deze gebruiker bestaat al.
+  different-account-required: Kies een andere rekening
+profile:
+  title: Profiel
+  display-preferences: Weergavevoorkeuren
+  date-format: Datumweergaveformaat
+  number-decimals: Aantal decimalen
+periods:
+  open: Openen
+  create-title: Periode maken
+  name-placeholder: Periodenaam
+  from: van
+  current: lopend
+  edit-dates: Datums bewerken
+  edit-name: Naam bewerken
+  delete-period: Periode verwijderen
+  delete-period-blocked: Verwijder eerst {transactions} transactie(s) en {budgets} budgetitem(s).
+  free-period: Vrije periode
+  end-after-start: De einddatum moet na de begindatum liggen.
+  overlap: Overlapt met periode {name} ({period}).
+period:
+  overview: Overzicht
+  budget: Budget
+  all-periods: Alle periodes
+  add-account: Rekening toevoegen
+  balances-by-account: Saldi per rekening
+  opening: Begin
+  movements: Bewegingen
+  current: Huidig
+  no-balance: Geen saldo ingevoerd.
+  transfers: Overschrijvingen
+  no-transfer: Geen overschrijving.
+  no-planned-entry: Geen gepland item.
+  add-budget-entry: Budgetitem toevoegen
+  clear-budget: Alle budgetitems verwijderen
+  move: Verplaatsen
+  add-row: Rij toevoegen
+  remove-all-rows: Alle rijen verwijderen
+  import-csv: CSV importeren
+  missing-account: Rekening niet gevonden
+  unknown: onbekend
+  balance: Saldo
+  current-balance: Huidig saldo
+  total-operations: Totaal verrichtingen
+  status-scheduled: Gepland
+  status-found: Gevonden
+  status-canceled: Geannuleerd
+  cancel-scheduled: Dit geplande item annuleren
+  send-to-account: Naar rekening sturen
+  hide-account: Deze rekening uit de tabs verwijderen
+  hide-account-blocked: De rekening kan niet worden verwijderd omdat ze {transactions} transactie(s) bevat
+  transaction-count: "{transactions} transactie(s) voor een totaal van {amount}"
+  date-not-recognized: De datum van deze transactie wordt niet herkend.
+  date-before-period: "Datum buiten periode: {date} ligt voor het begin {start}."
+  date-after-period: "Datum buiten periode: {date} ligt na het einde {end}."

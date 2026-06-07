@@ -1,0 +1,73 @@
+<section class="page-title">
+  <div>
+    <p class="eyebrow">{{ period_label }}</p>
+    <h1>CSV-Import</h1>
+  </div>
+  <a class="button ghost" href="/period/{{ period_id }}?account={{ account_id }}">Zurück zum Konto</a>
+</section>
+<section class="panel narrow">
+  <dl class="import-context">
+    <div><dt>Konto</dt><dd>{{ account_name }}</dd></div>
+    <div><dt>Periode</dt><dd>{{ period_name }}</dd></div>
+    <div><dt>Datums valides</dt><dd>{{ period_start_date }} &lt;= date{% if period_end_date %} &lt;= {{ period_end_date }}{% endif %}</dd></div>
+  </dl>
+  <form method="post" action="/period/{{ period_id }}/import" class="import-form">
+    <input type="hidden" name="account_id" value="{{ account_id }}">
+    <div class="form-row">
+      <label>Datumsformat
+        <select name="date_format" data-import-date-format>
+          <option value="dmy"{% if date_format == "dmy" %} selected{% endif %}>jj/mm/yy</option>
+          <option value="mdy"{% if date_format == "mdy" %} selected{% endif %}>mm/jj/yy</option>
+          <option value="ymd"{% if date_format == "ymd" %} selected{% endif %}>yy-mm-jj</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-row">
+      <label>Format
+        <select name="format" data-import-format>
+          <option value="csv_header"{% if format_value == "csv_header" %} selected{% endif %}>CSV mit Kopfzeile</option>
+          <option value="csv_no_header"{% if format_value == "csv_no_header" %} selected{% endif %}>CSV ohne Kopfzeile</option>
+          <option value="tsv_header"{% if format_value == "tsv_header" %} selected{% endif %}>TSV mit Kopfzeile</option>
+          <option value="tsv_no_header"{% if format_value == "tsv_no_header" %} selected{% endif %}>TSV ohne Kopfzeile</option>
+        </select>
+      </label>
+    </div>
+    <label>Zu importierende Daten
+      <textarea name="csv_import" rows="12" data-import-textarea placeholder="Datum,Bezeichnung,Betrag,Kommentar&#10;26/03/2026,Course - Exemple,-12.50,Note">{{ raw_csv }}</textarea>
+    </label>
+    <div class="form-actions">
+      <button name="action" value="validate">Validierung</button>
+      {% if validation %}
+      <button name="action" value="import"{% if validation.problem_count %} disabled{% endif %}>Importieren</button>
+      {% endif %}
+    </div>
+  </form>
+  {% if validation %}
+  <div class="import-validation">
+    <h2>Zu importierende Datei</h2>
+    <table>
+      <thead><tr><th>#</th><th>Datum</th><th>Bezeichnung</th><th>Betrag</th><th>Kommentar</th><th>Fehler</th></tr></thead>
+      <tbody>
+        {% for row in validation.rows %}
+        <tr{% if row.row_class %} class="{{ row.row_class }}"{% endif %}>
+          <td>{{ row.line }}</td>
+          <td>{{ row.date }}</td>
+          <td>{{ row.label }}</td>
+          <td>{{ row.amount }}</td>
+          <td>{{ row.comment }}</td>
+          <td>{{ row.errors }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">Keine Zeile zu validieren.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="import-result">
+      <div><span>Korrekte Datensätze</span><strong>{{ validation.correct_count }}</strong></div>
+      <div><span>Problematische Datensätze</span><strong class="{{ validation.problem_class }}">{{ validation.problem_count }}</strong></div>
+      <div><span>Bezeichnungen existants</span><strong>{{ validation.existing_label_count }}</strong></div>
+      <div><span>Bezeichnungen à créer</span><strong>{{ validation.create_label_count }}</strong></div>
+    </div>
+  </div>
+  {% endif %}
+</section>

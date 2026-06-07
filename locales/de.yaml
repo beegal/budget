@@ -1,0 +1,146 @@
+app:
+  name: Personal Finance
+nav:
+  periods: Perioden
+  parameters: Einstellungen
+  transactions: Transaktionen
+  summary: Übersicht
+  profile: Profil
+  admin: Admin
+  logout: Abmelden
+js:
+  login-progress: Anmeldung...
+  invalid-login: E-Mail oder Passwort ungültig
+  register-error: Konto kann nicht erstellt werden
+  saving: Speichern...
+  saved: Gespeichert
+  save-error: Fehler
+  deleting: Löschen...
+  deleted: Gelöscht
+  login-error: Anmeldefehler
+  account-merged: Konto zusammengeführt
+  order-saved: Reihenfolge gespeichert
+  label-creating: Bezeichnung wird erstellt...
+  reordering: Neu sortieren...
+  canceled: Abgebrochen
+  found: Gefunden
+  balance: Saldo
+  unknown-balance: "Saldo: unbekannt"
+  current-balance: Aktueller Saldo
+  total-operations: Summe der Buchungen
+  created-in: Erstellt in
+common:
+  date: Datum
+  label: Bezeichnung
+  amount: Betrag
+  comment: Kommentar
+  account: Konto
+  total: Summe
+filters:
+  label-placeholder: "Bsp.: Einkäufe - Supermarkt"
+parameters:
+  group-name: Gruppenname
+  subcategory: Unterkategorie
+  new-account: Neues Konto
+  merge-account: In ein anderes Konto zusammenführen
+  delete-account: Konto löschen
+  delete-account-blocked: Das Konto kann nicht gelöscht werden, weil es {transactions} Transaktion(en) enthält
+admin:
+  add-user: Benutzer hinzufügen
+  create: Erstellen
+  cancel: Abbrechen
+  title: Administration
+  users: Benutzer
+  last-login: Letzte Anmeldung
+  active: Aktiv
+  disable: Deaktivieren
+  enable: Aktivieren
+  remove-admin: Admin entfernen
+  make-admin: Zum Admin machen
+  new-password: Neues Passwort
+  change-password: Ändern
+  self-disable-forbidden: Du kannst deinen eigenen Benutzer nicht deaktivieren.
+  self-admin-remove-forbidden: Du kannst deinen eigenen Admin-Zugriff nicht entfernen.
+errors:
+  period-not-found: Periode nicht gefunden
+  account-not-found: Konto nicht gefunden
+  start-date-required: Periodenanfang fehlt
+  delete-period-blocked: Lösche zuerst {transactions} Transaktion(en) und {budgets} Budgeteintrag/-einträge.
+  unknown-date-format: Unbekanntes Datumsformat
+  invalid-date: "Ungültiges Datum: {value}"
+  label-required: Bezeichnung ist erforderlich
+  label-not-found: Bezeichnung nicht gefunden
+  invalid-amount: Ungültiger Betrag
+  date-required: Datum ist erforderlich
+  invalid-date-for-format: "Ungültiges Datum für Format {format}: {value}"
+  endpoint-not-found: Endpoint nicht gefunden
+  transaction-not-found: Transaktion nicht gefunden
+  invalid-index: Ungültiger Index
+  date-min: Datum muss >= {date} sein
+  date-max: Datum muss <= {date} sein
+  field-not-allowed: Feld ist nicht erlaubt
+  start-date-value-required: Anfangsdatum ist erforderlich
+  name-required: Name ist erforderlich
+  invalid-position: Ungültige Position
+  invalid-move: Ungültige Verschiebung
+  invalid-day: Ungültiger Tag
+  budget-entry-not-found: Budgeteintrag nicht gefunden
+  budget-entry-not-scheduled: Dieser Eintrag ist nicht mehr geplant
+  value-required: Wert ist erforderlich
+  email-required: E-Mail ist erforderlich.
+  password-min-length: Das Passwort muss mindestens 8 Zeichen enthalten.
+  user-already-exists: Dieser Benutzer existiert bereits.
+  different-account-required: Wähle ein anderes Konto
+profile:
+  title: Profil
+  display-preferences: Anzeigeeinstellungen
+  date-format: Datumsanzeigeformat
+  number-decimals: Dezimalstellen
+periods:
+  open: Öffnen
+  create-title: Periode erstellen
+  name-placeholder: Periodenname
+  from: von
+  current: laufend
+  edit-dates: Daten bearbeiten
+  edit-name: Namen bearbeiten
+  delete-period: Periode löschen
+  delete-period-blocked: Lösche zuerst {transactions} Transaktion(en) und {budgets} Budgeteintrag/-einträge.
+  free-period: Freie Periode
+  end-after-start: Das Enddatum muss nach dem Anfangsdatum liegen.
+  overlap: Überschneidet sich mit Periode {name} ({period}).
+period:
+  overview: Übersicht
+  budget: Budget
+  all-periods: Alle Perioden
+  add-account: Konto hinzufügen
+  balances-by-account: Salden nach Konto
+  opening: Anfang
+  movements: Bewegungen
+  current: Aktuell
+  no-balance: Kein Saldo erfasst.
+  transfers: Überweisungen
+  no-transfer: Keine Überweisung.
+  no-planned-entry: Kein geplanter Eintrag.
+  add-budget-entry: Budgeteintrag hinzufügen
+  clear-budget: Alle Budgeteinträge löschen
+  move: Verschieben
+  add-row: Zeile hinzufügen
+  remove-all-rows: Alle Zeilen löschen
+  import-csv: CSV importieren
+  missing-account: Konto nicht gefunden
+  unknown: unbekannt
+  balance: Saldo
+  current-balance: Aktueller Saldo
+  total-operations: Summe der Buchungen
+  status-scheduled: Geplant
+  status-found: Gefunden
+  status-canceled: Abgebrochen
+  cancel-scheduled: Diesen geplanten Eintrag abbrechen
+  send-to-account: An Konto senden
+  hide-account: Dieses Konto aus den Tabs entfernen
+  hide-account-blocked: Das Konto kann nicht gelöscht werden, weil es {transactions} Transaktion(en) enthält
+  transaction-count: "{transactions} Transaktion(en) für insgesamt {amount}"
+  date-not-recognized: Das Datum dieser Transaktion wurde nicht erkannt.
+  date-before-period: "Datum außerhalb der Periode: {date} liegt vor dem Anfang {start}."
+  date-after-period: "Datum außerhalb der Periode: {date} liegt nach dem Ende {end}."

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from components.common import icon
+from i18n import translate
 from web_helpers import format_date, money, period_label
 
 
@@ -11,12 +12,12 @@ def period_card_view(row: sqlite3.Row, warning: str | None) -> dict[str, object]
     budget_count = int(row["budget_count"] or 0)
     can_delete = transaction_count == 0 and budget_count == 0
     delete_title = (
-        "Supprimer la période"
+        translate("periods.delete-period")
         if can_delete
-        else f"Supprimer {transaction_count} transaction(s) et {budget_count} entrée(s) de budget avant de supprimer cette période."
+        else translate("periods.delete-period-blocked", transactions=transaction_count, budgets=budget_count)
     )
     start_display = format_date(row["start_date"] or "")
-    end_date = format_date(row["end_date"]) if row["end_date"] else "en cours"
+    end_date = format_date(row["end_date"]) if row["end_date"] else translate("periods.current")
     return {
         "id": row["id"],
         "name": row["name"],

@@ -1,0 +1,20 @@
+<section class="page-title">
+  <h1>Profile</h1>
+</section>
+
+<section class="panel profile-panel">
+  <h2>Display preferences</h2>
+  <form class="profile-form" method="post" action="/profile">
+    <label>Date display format
+      <select name="date_format">
+        {% for option in date_formats %}
+        <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Number decimals
+      <input name="number_decimals" value="{{ number_decimals }}" type="number" min="0" max="6" step="1">
+    </label>
+    <button type="submit">Save</button>
+  </form>
+</section>

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import sqlite3
+import calendar
+import locale
 import os
 import re
 from datetime import date
 from pathlib import Path
 from typing import Any
 
-from config import MONTH_NAMES, parse_simple_yaml
+from config import get_language, parse_simple_yaml
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("BUDGET_SQLITE_PATH", str(ROOT / "data" / "budget.sqlite3"))).expanduser()
@@ -238,6 +240,26 @@ def mysql_schema_statements() -> list[str]:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            user_id VARCHAR(36) NOT NULL UNIQUE,
+            locale VARCHAR(64) NOT NULL DEFAULT 'fr_FR.UTF-8',
+            date_format VARCHAR(16) NOT NULL DEFAULT 'dmy',
+            number_decimals INT NOT NULL DEFAULT 2,
+            CONSTRAINT fk_user_profiles_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS profile_seeded (
+            id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            user_id VARCHAR(36) NOT NULL,
+            seed_key VARCHAR(64) NOT NULL,
+            seeded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_profile_seeded_user_key (user_id, seed_key),
+            CONSTRAINT fk_profile_seeded_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS period (
             id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
             user_id VARCHAR(36) NOT NULL,
@@ -356,6 +378,22 @@ def sqlite_schema() -> str:
             last_login TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+            locale TEXT NOT NULL DEFAULT 'fr_FR.UTF-8',
+            date_format TEXT NOT NULL DEFAULT 'dmy',
+            number_decimals INTEGER NOT NULL DEFAULT 2
+        );
+
+        CREATE TABLE IF NOT EXISTS profile_seeded (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            seed_key TEXT NOT NULL,
+            seeded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, seed_key)
+        );
+
         CREATE TABLE IF NOT EXISTS period (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
@@ -442,6 +480,24 @@ def sqlite_needs_multi_user_migration(conn: sqlite3.Connection) -> bool:
 def ensure_sqlite_user_columns(conn: sqlite3.Connection) -> None:
     if not table_has_column(conn, "users", "last_login"):
         conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+            locale TEXT NOT NULL DEFAULT 'fr_FR.UTF-8',
+            date_format TEXT NOT NULL DEFAULT 'dmy',
+            number_decimals INTEGER NOT NULL DEFAULT 2
+        );
+        CREATE TABLE IF NOT EXISTS profile_seeded (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            seed_key TEXT NOT NULL,
+            seeded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, seed_key)
+        );
+        """
+    )
 
 
 def migrate_sqlite_multi_user(conn: sqlite3.Connection) -> None:
@@ -536,12 +592,33 @@ def adopt_legacy_data(conn: sqlite3.Connection | MySQLConnection, user_id: str) 
         conn.execute(f"UPDATE {table} SET user_id = ? WHERE user_id = ?", (user_id, LEGACY_USER_ID))
 
 
-def ensure_user_data(conn: sqlite3.Connection | MySQLConnection, user_id: str) -> None:
+def ensure_user_data(conn: sqlite3.Connection | MySQLConnection, user_id: str, language_id: str | None = None) -> None:
+    if profile_seed_done(conn, user_id, "initial-data"):
+        return
+    seed_empty_database(conn, user_id, language_id)
+    mark_profile_seed_done(conn, user_id, "initial-data")
+
+
+def profile_seed_done(conn: sqlite3.Connection | MySQLConnection, user_id: str, seed_key: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM profile_seeded WHERE user_id = ? AND seed_key = ?",
+        (user_id, seed_key),
+    ).fetchone()
+    if row is not None:
+        return True
     has_periods = conn.execute("SELECT EXISTS(SELECT 1 FROM period WHERE user_id = ?)", (user_id,)).fetchone()[0]
     has_accounts = conn.execute("SELECT EXISTS(SELECT 1 FROM accounts WHERE user_id = ?)", (user_id,)).fetchone()[0]
     if has_periods or has_accounts:
-        return
-    seed_empty_database(conn, user_id)
+        mark_profile_seed_done(conn, user_id, seed_key)
+        return True
+    return False
+
+
+def mark_profile_seed_done(conn: sqlite3.Connection | MySQLConnection, user_id: str, seed_key: str) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO profile_seeded(user_id, seed_key) VALUES (?, ?)",
+        (user_id, seed_key),
+    )
 
 
 def clear_all_data(conn: sqlite3.Connection | MySQLConnection) -> None:
@@ -554,6 +631,8 @@ def clear_all_data(conn: sqlite3.Connection | MySQLConnection) -> None:
         "transaction_labels",
         "accounts",
         "period",
+        "profile_seeded",
+        "user_profiles",
         "users",
     ):
         conn.execute(f"DELETE FROM {table}")
@@ -562,11 +641,12 @@ def clear_all_data(conn: sqlite3.Connection | MySQLConnection) -> None:
     conn.commit()
 
 
-def seed_empty_database(conn: sqlite3.Connection | MySQLConnection, user_id: str) -> None:
+def seed_empty_database(conn: sqlite3.Connection | MySQLConnection, user_id: str, language_id: str | None = None) -> None:
     initial_data = load_initial_data()
+    localized_initial_data = initial_data_for_language(initial_data, language_id)
     today = date.today()
     start_date = today.replace(day=1)
-    default_period_name = f"{MONTH_NAMES[today.month - 1]} {today.year}"
+    default_period_name = f"{month_name_for_language(today.month, language_id)} {today.year}"
     conn.execute(
         "INSERT INTO period(user_id, name, start_date, end_date) VALUES (?, ?, ?, NULL)",
         (user_id, default_period_name, start_date.isoformat()),
@@ -576,7 +656,7 @@ def seed_empty_database(conn: sqlite3.Connection | MySQLConnection, user_id: str
         (user_id, default_period_name),
     ).fetchone()["id"]
 
-    for index, account in enumerate(initial_accounts(initial_data), start=1):
+    for index, account in enumerate(initial_accounts(localized_initial_data), start=1):
         account_name = account["name"]
         show_in_summary = 1 if account.get("show_in_summary", True) else 0
         conn.execute(
@@ -595,7 +675,7 @@ def seed_empty_database(conn: sqlite3.Connection | MySQLConnection, user_id: str
             (user_id, period_id, account_id),
         )
 
-    for label in initial_labels(initial_data):
+    for label in initial_labels(localized_initial_data):
         conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label))
 
 
@@ -608,24 +688,49 @@ def load_initial_data() -> dict[str, Any]:
 
 def default_initial_data() -> dict[str, Any]:
     return {
-        "accounts": [
-            {"name": "Compte courant", "show_in_summary": True},
-            {"name": "Compte epargne", "show_in_summary": True},
-        ],
-        "labels": [
-            "Salaire",
-            "Courses",
-            "Loyer",
-            "Electricite",
-            "Internet",
-            "Transport",
-            "Virement interne",
-        ],
+        "languages": {
+            "fr": {
+                "accounts": [
+                    {"name": "Compte courant", "show_in_summary": True},
+                    {"name": "Compte epargne", "show_in_summary": True},
+                ],
+                "labels": ["Salaire", "Courses", "Loyer", "Electricite", "Internet", "Transport", "Restaurant", "Virement interne"],
+            }
+        }
     }
 
 
+def initial_data_for_language(initial_data: dict[str, Any], language_id: str | None) -> dict[str, Any]:
+    languages = initial_data.get("languages")
+    if not isinstance(languages, dict):
+        return initial_data
+    requested = str(language_id or "").strip().lower()
+    if requested and isinstance(languages.get(requested), dict):
+        return languages[requested]
+    default_language = next(iter(languages.values()), {})
+    return default_language if isinstance(default_language, dict) else {}
+
+
+def month_name_for_language(month: int, language_id: str | None) -> str:
+    language = get_language(language_id)
+    previous_locale = locale.setlocale(locale.LC_TIME)
+    try:
+        for locale_name in (language.get("locale", ""), ""):
+            try:
+                locale.setlocale(locale.LC_TIME, locale_name)
+                return calendar.month_name[month]
+            except locale.Error:
+                continue
+            except IndexError:
+                return str(month)
+        return calendar.month_name[month]
+    finally:
+        locale.setlocale(locale.LC_TIME, previous_locale)
+
+
 def initial_accounts(initial_data: dict[str, Any]) -> list[dict[str, Any]]:
-    accounts = initial_data.get("accounts") or default_initial_data()["accounts"]
+    fallback = initial_data_for_language(default_initial_data(), "fr")
+    accounts = initial_data.get("accounts") or fallback["accounts"]
     normalized = []
     for account in accounts:
         if isinstance(account, str):
@@ -637,9 +742,10 @@ def initial_accounts(initial_data: dict[str, Any]) -> list[dict[str, Any]]:
                     "show_in_summary": bool(account.get("show_in_summary", True)),
                 }
             )
-    return normalized or default_initial_data()["accounts"]
+    return normalized or fallback["accounts"]
 
 
 def initial_labels(initial_data: dict[str, Any]) -> list[str]:
-    labels = initial_data.get("labels") or default_initial_data()["labels"]
+    fallback = initial_data_for_language(default_initial_data(), "fr")
+    labels = initial_data.get("labels") or fallback["labels"]
     return [str(label).strip() for label in labels if str(label).strip()]

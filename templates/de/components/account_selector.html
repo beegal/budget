@@ -1,0 +1,16 @@
+<div class="multi-filter account-selector-filter" data-multi-filter>
+  <input type="hidden" name="accounts" value="{{ account_selector.value }}" data-multi-filter-value>
+  <div class="multi-tag-box" data-multi-tag-box>
+    {% for tag in account_selector.tags %}
+    <span class="multi-filter-tag" data-multi-tag="{{ tag.id }}">{{ tag.name }}<button type="button" data-multi-tag-remove aria-label="Entfernen {{ tag.name }}">x</button></span>
+    {% endfor %}
+    <input type="text" data-multi-tag-input placeholder="Kontenfilter">
+  </div>
+  <button type="button" class="multi-filter-toggle" data-multi-filter-toggle>Konten</button>
+  <div class="multi-filter-menu" data-multi-filter-menu hidden>
+    <button type="button" class="multi-filter-option" data-multi-filter-all>Alle</button>
+    {% for account in account_selector.periods %}
+    <label><input type="checkbox" value="{{ account.id }}" data-multi-filter-checkbox data-multi-name="{{ account.name }}" {% if account.checked %}checked{% endif %}> {{ account.name }}</label>
+    {% endfor %}
+  </div>
+</div>

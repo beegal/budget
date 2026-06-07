@@ -89,17 +89,23 @@ http://127.0.0.1:8000
 
 ## Configuration
 
-Le fichier `config.yaml` contient les préférences d'affichage:
+Le fichier `config.yaml` déclare les langues supportées et leurs valeurs par défaut:
 
 ```yaml
-i18n:
-  default-locale: fr_FR.UTF-8
-  date-format: jj/mm/yy
-display:
-  number-decimals: 2
+languages:
+  - id: fr
+    label: Français
+    icon: 🇫🇷
+    locale: fr_FR.UTF-8
+    date-format: jj/mm/yy
+  - id: en
+    label: English
+    icon: 🇬🇧
+    locale: en_US.UTF-8
+    date-format: mm/dd/yy
 ```
 
-`date-format` accepte `jj/mm/yy`, `mm/jj/yy` ou `yy-mm-jj`. Ce format sert notamment de valeur par défaut dans l'import CSV.
+`date-format` accepte `jj/mm/yy`, `mm/jj/yy` ou `yy-mm-jj`. La `locale` reste un détail technique attaché à la langue pour les noms de mois et les APIs de formatage, elle n'est pas exposée dans le profil utilisateur.
 
 La base de données peut aussi être configurée par variables d'environnement:
 

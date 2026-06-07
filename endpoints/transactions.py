@@ -7,6 +7,7 @@ from components.common import label_picker
 from components.transactions import transaction_view_rows
 from database import db
 from endpoints.filters import account_selector_view, parse_account_ids, parse_period_ids, period_selector_view
+from i18n import translate
 from web_helpers import money, one, render_template, user_layout
 
 
@@ -65,7 +66,7 @@ def page(query: str, user_id: str) -> bytes:
             "total_class": "positive" if total > 0 else "negative" if total < 0 else "",
         },
     )
-    return user_layout("Transactions", body, user_id)
+    return user_layout(translate("transactions.title"), body, user_id)
 
 
 def create(data: dict[str, list[str]], user_id: str) -> str:

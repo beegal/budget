@@ -16,6 +16,7 @@ def transaction_view_row(row: sqlite3.Row) -> dict[str, str]:
         "period_name": row["period_name"],
         "account_name": row["account_name"],
         "label": row["label"],
+        "comment": row["comment"] or "",
         "amount": money(row["amount"]),
         "amount_class": amount_class,
     }

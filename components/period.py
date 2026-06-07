@@ -5,8 +5,9 @@ import sqlite3
 from datetime import datetime
 
 from components.common import icon, label_picker, row_action_buttons
-from config import NUMBER_DECIMALS
+from i18n import translate
 from web_helpers import format_date, format_number, money, transaction_filter_url
+from user_preferences import current_number_decimals
 
 
 def period_tabs_view(
@@ -22,8 +23,8 @@ def period_tabs_view(
     ]
     return {
         "simple_tabs": [
-            {"label": "Synthèse", "href": f"/period/{period_id}", "active_class": "active" if active == "overview" else ""},
-            {"label": "Budget", "href": f"/period/{period_id}?account=budget", "active_class": "active" if active == "budget" else ""},
+            {"label": translate("period.overview"), "href": f"/period/{period_id}", "active_class": "active" if active == "overview" else ""},
+            {"label": translate("period.budget"), "href": f"/period/{period_id}?account=budget", "active_class": "active" if active == "budget" else ""},
         ],
         "account_tabs": account_tabs,
         "hidden_links": hidden_links,
@@ -66,14 +67,14 @@ def account_tab_link_view(period_id: int, active: str, account: sqlite3.Row) -> 
     balance_class = "positive" if current_balance > 0 else "negative" if current_balance < 0 else "neutral"
     can_hide = transaction_count == 0
     hide_title = (
-        "Retirer ce compte des onglets"
+        translate("period.hide-account")
         if can_hide
-        else f"Impossible de supprimer le compte car il contient {transaction_count} transaction(s)"
+        else translate("period.hide-account-blocked", transactions=transaction_count)
     )
     tooltip = "\n".join(
         [
-            f"Solde: {money(account['current']).replace(' EUR', ' euro')}",
-            f"{transaction_count} transaction(s) pour un total de {money(account['transaction_total']).replace(' EUR', ' euro')}",
+            f"{translate('period.balance')}: {money(account['current'])}",
+            translate("period.transaction-count", transactions=transaction_count, amount=money(account["transaction_total"])),
         ]
     )
     return {
@@ -138,11 +139,11 @@ def money_or_empty(value: object) -> str:
 
 
 def balance_display(value: object) -> str:
-    return "inconnu" if value is None else format_number(value)
+    return translate("period.unknown") if value is None else format_number(value)
 
 
 def balance_money_display(value: object) -> str:
-    return "inconnu" if value is None else money(value)
+    return translate("period.unknown") if value is None else money(value)
 
 
 def balance_defined_class(value: object) -> str:
@@ -173,7 +174,11 @@ def budget_tab_view(period_id: int, rows: list[sqlite3.Row], accounts: list[sqli
 
 def budget_schedule_row_view(index: int, row: sqlite3.Row, accounts: list[sqlite3.Row]) -> dict[str, object]:
     status = str(row["status"])
-    status_label = {"scheduled": "Planifié", "found": "Trouvé", "cancel": "Annulé"}.get(status, status)
+    status_label = {
+        "scheduled": translate("period.status-scheduled"),
+        "found": translate("period.status-found"),
+        "cancel": translate("period.status-canceled"),
+    }.get(status, status)
     return {
         "index": index,
         "id": row["id"],
@@ -193,13 +198,13 @@ def budget_schedule_actions_view(status: str) -> list[dict[str, str]]:
         {
             "class": "row-cancel",
             "data_attr": "data-budget-schedule-cancel",
-            "title": "Annuler cette entrée prévue",
+            "title": translate("period.cancel-scheduled"),
             "icon": icon("ban"),
         },
         {
             "class": "row-confirm",
             "data_attr": "data-budget-schedule-confirm",
-            "title": "Envoyer vers un compte",
+            "title": translate("period.send-to-account"),
             "icon": icon("send"),
         },
     ]
@@ -225,18 +230,18 @@ def account_tab_view(
     rows = []
     for row in transactions:
         balance_title = (
-            f"Solde: {money(running_balance)}"
+            f"{translate('period.balance')}: {money(running_balance)}"
             if opening_balance is not None
-            else "Solde: inconnu"
+            else f"{translate('period.balance')}: {translate('period.unknown')}"
         )
         rows.append(transaction_row_view(row, period, balance_title))
         amount = float(row["amount"] or 0)
         operations_total += amount
         running_balance += amount
     current_balance = (
-        f"Solde actuel : {money(running_balance)} - Total opérations : {money(operations_total)}"
+        f"{translate('period.current-balance')} : {money(running_balance)} - {translate('period.total-operations')} : {money(operations_total)}"
         if opening_balance is not None
-        else f"Solde actuel : inconnu - Total opérations : {money(operations_total)}"
+        else f"{translate('period.current-balance')} : {translate('period.unknown')} - {translate('period.total-operations')} : {money(operations_total)}"
     )
     opening_data = "" if opening_balance is None else format_number(opening_balance)
     return {
@@ -246,7 +251,7 @@ def account_tab_view(
         "account_name": account["name"],
         "labels_json": json.dumps([row["name"] for row in labels], ensure_ascii=False),
         "opening_data": opening_data,
-        "number_decimals": NUMBER_DECIMALS,
+        "number_decimals": current_number_decimals(),
         "rows": rows,
         "current_balance": current_balance,
         "plus_icon": icon("plus"),
@@ -266,7 +271,7 @@ def transaction_row_view(row: sqlite3.Row, period: sqlite3.Row, balance_title: s
         "date": format_date(row["date"]),
         "label_picker": label_picker(row["label"], 'data-save="transaction" data-field="label"'),
         "amount": format_number(row["amount"]),
-        "comment": row["comment"],
+        "comment": row["comment"] or "",
         "warning_reason": warning_reason,
         "warning_icon": icon("warning") if warning_reason else "",
         "row_actions": row_action_buttons("row"),
@@ -290,9 +295,9 @@ def transaction_period_warning_reason(row: sqlite3.Row, period: sqlite3.Row) -> 
         start_date = datetime.strptime(str(period["start_date"]), "%Y-%m-%d").date() if period["start_date"] else None
         end_date = datetime.strptime(str(period["end_date"]), "%Y-%m-%d").date() if period["end_date"] else None
     except ValueError:
-        return "La date de cette transaction n'est pas reconnue."
+        return translate("period.date-not-recognized")
     if start_date and tx_date < start_date:
-        return f"Date hors période: {format_date(tx_date_raw)} est avant le début {format_date(period['start_date'])}."
+        return translate("period.date-before-period", date=format_date(tx_date_raw), start=format_date(period["start_date"]))
     if end_date and tx_date > end_date:
-        return f"Date hors période: {format_date(tx_date_raw)} est après la fin {format_date(period['end_date'])}."
+        return translate("period.date-after-period", date=format_date(tx_date_raw), end=format_date(period["end_date"]))
     return ""

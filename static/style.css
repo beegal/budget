@@ -79,6 +79,30 @@ nav {
   text-decoration: underline;
 }
 
+.language-selector {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  margin: 0;
+}
+
+.language-selector-icon {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.language-selector select {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  min-height: 28px;
+  padding: 3px 7px;
+  width: auto;
+}
+
 main {
   margin: 0 auto;
   max-width: 1440px;
@@ -945,6 +969,28 @@ select {
 
 .labels-form {
   grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+}
+
+.profile-panel {
+  max-width: 680px;
+}
+
+.profile-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.field-help {
+  color: var(--muted);
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+.profile-form button {
+  justify-self: start;
 }
 
 .tabs {

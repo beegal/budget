@@ -1,27 +1,41 @@
 from __future__ import annotations
 
 import html
+import json
 import sqlite3
 from datetime import date
+from functools import cache
 from pathlib import Path
 from urllib.parse import urlencode
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from config import DATE_ORDER, MONTH_LOOKUP, NUMBER_DECIMALS, strip_accents
+from i18n import current_language, current_language_locale_tag, frontend_messages, language_options, translate
+from config import strip_accents
+from user_preferences import current_date_order, current_month_lookup, current_number_decimals, current_preferences
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-JINJA_ENV = Environment(
-    loader=FileSystemLoader(TEMPLATES_DIR),
-    autoescape=select_autoescape(("html",)),
-)
+
+
+@cache
+def jinja_env(language: str) -> Environment:
+    localized_dir = TEMPLATES_DIR / language
+    search_paths = [localized_dir, TEMPLATES_DIR] if localized_dir.exists() else [TEMPLATES_DIR]
+    env = Environment(
+        loader=FileSystemLoader(search_paths),
+        autoescape=select_autoescape(("html",)),
+    )
+    env.globals["t"] = translate
+    return env
 
 
 def render_template(template_name: str, **context: object) -> str:
-    template_path = TEMPLATES_DIR / template_name
-    if not template_path.exists():
+    language = current_language()
+    template_path = TEMPLATES_DIR / language / template_name
+    fallback_path = TEMPLATES_DIR / template_name
+    if not template_path.exists() and not fallback_path.exists():
         return f"Template {template_name} not found"
-    return JINJA_ENV.get_template(template_name).render(**context)
+    return jinja_env(language).get_template(template_name).render(**context)
 
 
 def normalize_date(value: object) -> str | None:
@@ -51,17 +65,18 @@ def normalize_date(value: object) -> str | None:
             day, month = numeric_day_month(first, second)
             year = date.today().year
         else:
-            raise ValueError("Format de date inconnu")
+            raise ValueError(translate("errors.unknown-date-format"))
 
         return date(year, month, day).isoformat()
     except (ValueError, KeyError, IndexError):
-        raise ValueError(f"Date invalide: {value}")
+        raise ValueError(translate("errors.invalid-date", value=value))
 
 
 def parse_month(value: str) -> int:
     normalized = strip_accents(value)
-    if normalized in MONTH_LOOKUP:
-        return MONTH_LOOKUP[normalized]
+    month_lookup = current_month_lookup()
+    if normalized in month_lookup:
+        return month_lookup[normalized]
     return int(value)
 
 
@@ -70,7 +85,7 @@ def numeric_day_month(first: int, second: int) -> tuple[int, int]:
         return first, second
     if second > 12 and first <= 12:
         return second, first
-    if DATE_ORDER == "mdy":
+    if current_date_order() == "mdy":
         return second, first
     return first, second
 
@@ -89,7 +104,7 @@ def money(value: float | int | str | None) -> str:
 def format_number(value: float | int | str | None) -> str:
     value = float(value or 0)
     sign = "-" if value < 0 else ""
-    pattern = f"{{:,.{NUMBER_DECIMALS}f}}"
+    pattern = f"{{:,.{current_number_decimals()}f}}"
     return f"{sign}{pattern.format(abs(value))}".replace(",", " ").replace(".", ",")
 
 
@@ -101,8 +116,10 @@ def format_date(value: object) -> str:
         parsed = date.fromisoformat(raw)
     except ValueError:
         return raw
-    if DATE_ORDER == "mdy":
+    if current_date_order() == "mdy":
         return parsed.strftime("%m/%d/%Y")
+    if current_date_order() == "ymd":
+        return parsed.strftime("%Y-%m-%d")
     return parsed.strftime("%d/%m/%Y")
 
 
@@ -118,10 +135,10 @@ def period_label(row: sqlite3.Row) -> str:
     start = row["start_date"] if "start_date" in row.keys() else None
     end = row["end_date"] if "end_date" in row.keys() else None
     if start and end:
-        return f"du {format_date(start)} -> {format_date(end)}"
+        return f"{translate('periods.from')} {format_date(start)} -> {format_date(end)}"
     if start:
-        return f"du {format_date(start)} -> en cours"
-    return "Période libre"
+        return f"{translate('periods.from')} {format_date(start)} -> {translate('periods.current')}"
+    return translate("periods.free-period")
 
 
 def transaction_filter_url(period_ids: list[int], label: str) -> str:
@@ -130,7 +147,19 @@ def transaction_filter_url(period_ids: list[int], label: str) -> str:
 
 
 def layout(title: str, body: str) -> bytes:
-    return render_template("layout.html", title=title, body=body, authenticated=False, show_admin=False).encode("utf-8")
+    preferences = current_preferences()
+    frontend_config = {**preferences.as_frontend_config(), "language": current_language(), "locale": current_language_locale_tag()}
+    return render_template(
+        "layout.html",
+        title=title,
+        body=body,
+        authenticated=False,
+        show_admin=False,
+        html_lang=current_language(),
+        frontend_config=json.dumps(frontend_config, ensure_ascii=False),
+        frontend_i18n=json.dumps(frontend_messages(), ensure_ascii=False),
+        languages=language_options(),
+    ).encode("utf-8")
 
 
 def user_layout(title: str, body: str, user_id: str) -> bytes:
@@ -138,10 +167,15 @@ def user_layout(title: str, body: str, user_id: str) -> bytes:
 
     with db() as conn:
         row = conn.execute("SELECT is_superuser FROM users WHERE id = ?", (user_id,)).fetchone()
+    frontend_config = {**current_preferences().as_frontend_config(), "language": current_language(), "locale": current_language_locale_tag()}
     return render_template(
         "layout.html",
         title=title,
         body=body,
         authenticated=True,
         show_admin=bool(row and row["is_superuser"]),
+        html_lang=current_language(),
+        frontend_config=json.dumps(frontend_config, ensure_ascii=False),
+        frontend_i18n=json.dumps(frontend_messages(), ensure_ascii=False),
+        languages=language_options(),
     ).encode("utf-8")

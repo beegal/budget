@@ -4,14 +4,13 @@ from datetime import date, datetime, timedelta
 import sqlite3
 
 from components.periods import period_card_view
-import database
 from database import db
+from i18n import translate
 from web_helpers import format_date, normalize_date, one, period_label, render_template, user_layout
 
 
 def page(user_id: str) -> bytes:
     with db() as conn:
-        database.ensure_user_data(conn, user_id)
         periods = conn.execute(
             """
             SELECT m.*,
@@ -48,7 +47,7 @@ def page(user_id: str) -> bytes:
         for row in periods
     ]
     body = render_template("periods.html", today=format_date(date.today().isoformat()), periods=period_views)
-    return user_layout("Périodes", body, user_id)
+    return user_layout(translate("nav.periods"), body, user_id)
 
 
 def period_warnings(periods: list[sqlite3.Row]) -> dict[int, str]:
@@ -58,7 +57,7 @@ def period_warnings(periods: list[sqlite3.Row]) -> dict[int, str]:
         start = parse_iso_date(row["start_date"])
         end = parse_iso_date(row["end_date"])
         if start and end and end <= start:
-            warnings[row["id"]] = "La date de fin doit être après la date de début."
+            warnings[row["id"]] = translate("periods.end-after-start")
         ranges.append((row, start, end))
 
     for index, (row, start, end) in enumerate(ranges):
@@ -68,8 +67,8 @@ def period_warnings(periods: list[sqlite3.Row]) -> dict[int, str]:
             if not other_start:
                 continue
             if periods_overlap(start, end, other_start, other_end):
-                reason = f"Chevauche la période {other['name']} ({period_label(other)})."
-                other_reason = f"Chevauche la période {row['name']} ({period_label(row)})."
+                reason = translate("periods.overlap", name=other["name"], period=period_label(other))
+                other_reason = translate("periods.overlap", name=row["name"], period=period_label(row))
                 warnings.setdefault(row["id"], reason)
                 warnings.setdefault(other["id"], other_reason)
     return warnings
@@ -137,6 +136,7 @@ def seed_budget_schedule(conn, period_id: int, user_id: str) -> None:
 
 def normalize_period_end(value: str) -> str | None:
     raw = str(value or "").strip()
-    if not raw or raw.casefold() == "en cours":
+    current_markers = {"en cours", "current", "laufend", "lopend", translate("periods.current").casefold()}
+    if not raw or raw.casefold() in current_markers:
         return None
     return normalize_date(raw)

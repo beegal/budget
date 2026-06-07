@@ -1,0 +1,17 @@
+<section class="auth-panel panel">
+  <h1>Konto erstellen</h1>
+  <p class="muted">Schnelle Registrierung: E-Mail, Passwort, und los geht es.</p>
+  <form class="auth-form" data-auth-register>
+    <label>Email
+      <input type="email" name="email" autocomplete="email" required>
+    </label>
+    <label>Passwort
+      <input type="password" name="password" autocomplete="new-password" minlength="8" required>
+    </label>
+    <div class="form-actions">
+      <button type="submit">Konto erstellen</button>
+      <a class="button ghost" href="/login">Bereits registriert</a>
+    </div>
+    <p class="auth-message save-state" data-auth-message></p>
+  </form>
+</section>

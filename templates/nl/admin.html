@@ -1,0 +1,86 @@
+<section class="page-title">
+  <div>
+    <h1>Administration</h1>
+  </div>
+  <span class="save-state" data-save-state></span>
+</section>
+
+<section class="panel admin-panel">
+  <h2>Gebruikers</h2>
+  {% if error %}
+  <p class="save-error admin-error">{{ error }}</p>
+  {% endif %}
+  <div class="settings-table-scroll">
+    <table class="sheet-table admin-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Laatste aanmelding</th>
+          <th class="num">Rekeningen</th>
+          <th class="num">Transacties</th>
+          <th>Actief</th>
+          <th>Admin</th>
+          <th>Wachtwoord</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        <tr>
+          <td>{{ user["email"] }}</td>
+          <td>{{ user["last_login"] or "-" }}</td>
+          <td class="num">{{ user["account_count"] }}</td>
+          <td class="num">{{ user["transaction_count"] }}</td>
+          <td>
+            <form method="post" action="/admin/users/active" class="admin-inline-form">
+              <input type="hidden" name="user_id" value="{{ user['id'] }}">
+              <input type="hidden" name="enabled" value="{{ 0 if user['is_active'] else 1 }}">
+              <button type="submit" class="button {{ 'danger' if user['is_active'] else '' }}" {% if user["id"] == current_user_id %}disabled title="Je kunt je eigen gebruiker niet deactiveren"{% endif %}>
+                {{ "Deactiveren" if user["is_active"] else "Activeren" }}
+              </button>
+            </form>
+          </td>
+          <td>
+            <form method="post" action="/admin/users/admin" class="admin-inline-form">
+              <input type="hidden" name="user_id" value="{{ user['id'] }}">
+              <input type="hidden" name="enabled" value="{{ 0 if user['is_superuser'] else 1 }}">
+              <button type="submit" class="button {{ 'danger' if user['is_superuser'] else 'ghost' }}" {% if user["id"] == current_user_id and user["is_superuser"] %}disabled title="Je kunt je eigen adminrechten niet verwijderen"{% endif %}>
+                {{ "Admin verwijderen" if user["is_superuser"] else "Admin maken" }}
+              </button>
+            </form>
+          </td>
+          <td>
+            <form method="post" action="/admin/users/password" class="admin-password-form">
+              <input type="hidden" name="user_id" value="{{ user['id'] }}">
+              <input type="password" name="password" placeholder="Nieuw wachtwoord" minlength="8" required>
+              <button type="submit">Wijzigen</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr data-admin-user-create-row hidden>
+          <td><input form="admin-create-user-form" type="email" name="email" placeholder="email@exemple.com" required></td>
+          <td>-</td>
+          <td class="num">0</td>
+          <td class="num">0</td>
+          <td class="center-cell"><input form="admin-create-user-form" type="checkbox" name="is_active" value="1" checked></td>
+          <td class="center-cell"><input form="admin-create-user-form" type="checkbox" name="is_superuser" value="1"></td>
+          <td>
+            <form id="admin-create-user-form" method="post" action="/admin/users/create" class="admin-password-form">
+              <input type="password" name="password" placeholder="Wachtwoord" minlength="8" required>
+              <button type="submit" class="row-confirm icon-button" title="Maken" aria-label="Maken">V</button>
+              <button type="button" class="row-cancel icon-button" data-admin-user-create-cancel title="Annuleren" aria-label="Annuleren">X</button>
+            </form>
+          </td>
+        </tr>
+        <tr data-admin-user-add-row>
+          <td colspan="6"></td>
+          <td class="row-actions">
+            <button type="button" class="add-row-button" data-admin-user-create-toggle title="Gebruiker toevoegen" aria-label="Gebruiker toevoegen">+</button>
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</section>

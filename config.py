@@ -9,6 +9,15 @@ import unicodedata
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.yaml"
+DEFAULT_LANGUAGES = [
+    {
+        "id": "fr",
+        "label": "Français",
+        "icon": "🇫🇷",
+        "locale": "fr_FR.UTF-8",
+        "date-format": "dmy",
+    }
+]
 
 
 def parse_simple_yaml(text: str) -> dict[str, Any]:
@@ -137,11 +146,51 @@ def normalize_import_word(match: re.Match[str]) -> str:
     return lowered[0].upper() + lowered[1:]
 
 
+def get_supported_languages() -> list[dict[str, str]]:
+    config = load_config()
+    raw_languages = config.get("languages", DEFAULT_LANGUAGES)
+    if not isinstance(raw_languages, list):
+        return DEFAULT_LANGUAGES
+    languages = []
+    for raw_language in raw_languages:
+        if not isinstance(raw_language, dict):
+            continue
+        language_id = str(raw_language.get("id") or "").strip().lower()
+        if not language_id:
+            continue
+        languages.append(
+            {
+                "id": language_id,
+                "label": str(raw_language.get("label") or language_id).strip(),
+                "icon": str(raw_language.get("icon") or "").strip(),
+                "locale": str(raw_language.get("locale") or "").strip(),
+                "date-format": str(raw_language.get("date-format") or "dmy").strip().lower(),
+            }
+        )
+    return languages or DEFAULT_LANGUAGES
+
+
+def get_default_language() -> dict[str, str]:
+    return get_supported_languages()[0]
+
+
+def get_language(language_id: object) -> dict[str, str]:
+    requested = str(language_id or "").strip().lower()
+    for language in get_supported_languages():
+        if language["id"] == requested:
+            return language
+    return get_default_language()
+
+
+def get_supported_language_ids() -> set[str]:
+    return {language["id"] for language in get_supported_languages()}
+
+
 def get_default_locale() -> str:
     config = load_config()
     section = config.get("i18n", config.get("I18n", {}))
     value = section.get("default-locale", "")
-    return str(value).strip()
+    return str(value).strip() or get_default_language()["locale"]
 
 
 def apply_default_locale() -> None:
@@ -191,9 +240,8 @@ def get_date_order() -> str:
     date_format = get_date_format()
     if date_format == "mdy":
         return "mdy"
-    locale_name = get_default_locale().lower()
-    if locale_name.startswith(("en_us", "en-ca", "en_ph")):
-        return "mdy"
+    if date_format == "ymd":
+        return "ymd"
     return "dmy"
 
 
@@ -220,9 +268,9 @@ def get_date_format() -> str:
     }
     if value in aliases:
         return aliases[value]
-    locale_name = get_default_locale().lower()
-    if locale_name.startswith(("en_us", "en-ca", "en_ph")):
-        return "mdy"
+    default_language_format = get_default_language().get("date-format", "dmy")
+    if default_language_format in aliases:
+        return aliases[default_language_format]
     return "dmy"
 
 

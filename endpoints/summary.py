@@ -6,6 +6,7 @@ from urllib.parse import parse_qs
 from components.period import balance_tone, is_transfer_group, money_or_empty
 from database import db
 from endpoints.filters import parse_period_ids, period_selector_view
+from i18n import translate
 from web_helpers import money, render_template, transaction_filter_url, user_layout
 
 
@@ -34,7 +35,7 @@ def page(query: str, user_id: str) -> bytes:
             "net_class": balance_tone(total_net),
         },
     )
-    return user_layout("Synthèse", body, user_id)
+    return user_layout(translate("summary.title"), body, user_id)
 
 
 def summary_rows(conn: sqlite3.Connection, period_ids: list[int], user_id: str) -> list[sqlite3.Row]:

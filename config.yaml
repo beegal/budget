@@ -1,6 +1,22 @@
-# Configuration du budget
-i18n:
-  default-locale: fr_FR.UTF-8
-  date-format: jj/mm/yy
-display:
-  number-decimals: 2
+# Configuration globale de Personal Finance.
+languages:
+  - id: fr
+    label: Français
+    icon: 🇫🇷
+    locale: fr_FR.UTF-8
+    date-format: jj/mm/yy
+  - id: de
+    label: Deutsch
+    icon: 🇩🇪
+    locale: de_DE.UTF-8
+    date-format: jj/mm/yy
+  - id: nl
+    label: Nederlands
+    icon: 🇳🇱
+    locale: nl_NL.UTF-8
+    date-format: jj/mm/yy
+  - id: en
+    label: English
+    icon: 🇬🇧
+    locale: en_US.UTF-8
+    date-format: mm/dd/yy

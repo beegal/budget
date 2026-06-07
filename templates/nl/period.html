@@ -1,0 +1,213 @@
+<section class="page-title">
+  <div class="period-title-block">
+    <div class="period-title-navigation">
+      {% if period_nav.previous %}
+      <a class="period-neighbor period-neighbor-previous" href="{{ period_nav.previous.href }}">{{ period_nav.previous.name }}</a>
+      {% else %}
+      <span class="period-neighbor period-neighbor-empty"></span>
+      {% endif %}
+      <h1>{{ period_name }}</h1>
+      {% if period_nav.next %}
+      <a class="period-neighbor period-neighbor-next" href="{{ period_nav.next.href }}">{{ period_nav.next.name }}</a>
+      {% else %}
+      <span class="period-neighbor period-neighbor-empty"></span>
+      {% endif %}
+      <p class="period-date-label">{{ period_label }}</p>
+    </div>
+  </div>
+  <a class="button ghost" href="/">Alle les périodes</a>
+</section>
+<nav class="tabs">
+  {% for tab in tabs.simple_tabs %}
+  <a class="tab {{ tab.active_class }}" href="{{ tab.href }}">{{ tab.label }}</a>
+  {% endfor %}
+  {% for account in tabs.account_tabs %}
+  <span class="account-tab-wrapper">
+    <a class="tab account-tab {{ account.selected }}" href="{{ account.href }}">
+      <span>{{ account.name }}</span>
+      <span class="tab-info tab-info-{{ account.balance_class }}" title="{{ account.tooltip }}" aria-label="{{ account.tooltip }}">i</span>
+    </a>
+    <button type="button" class="tab-account-hide" data-hide-account-tab data-period-id="{{ account.period_id }}" data-account-id="{{ account.id }}" title="{{ account.hide_title }}" aria-label="{{ account.hide_title }}"{% if not account.can_hide %} disabled{% endif %}>{{ account.trash_icon | safe }}</button>
+  </span>
+  {% endfor %}
+  {% if tabs.hidden_links %}
+  <span class="tab-add-wrapper">
+    <button type="button" class="tab tab-add icon-button" data-tab-add-toggle title="Rekening toevoegen" aria-label="Rekening toevoegen">{{ tabs.plus_icon | safe }}</button>
+    <span class="tab-add-menu" data-tab-add-menu hidden>
+      {% for account in tabs.hidden_links %}<a href="{{ account.href }}">{{ account.name }}</a>{% endfor %}
+    </span>
+  </span>
+  {% endif %}
+</nav>
+
+{% if content.type == "overview" %}
+<section class="two-col">
+  <div class="panel">
+    <h2>Saldi per rekening</h2>
+    <table class="overview-table balance-table">
+      <thead><tr><th>Rekening</th><th class="num">Begin</th><th class="num">Bewegingen</th><th class="num">Huidig</th></tr></thead>
+      <tbody>
+        {% for row in content.balance_rows %}
+        <tr>
+          <td>{{ row.name }}</td>
+          <td class="num {{ row.opening_class }}" data-account-balance-cell data-period-id="{{ row.period_id }}" data-account-id="{{ row.account_id }}" data-original="{{ row.opening_raw }}">
+            <button type="button" class="balance-display {{ row.opening_defined_class }}" data-balance-display>{{ row.opening_display }}</button>
+            <span class="balance-edit" data-balance-edit hidden>
+              <input class="num" data-balance-input value="{{ row.opening_raw }}" inputmode="decimal">
+              <button type="button" class="row-confirm" data-confirm-account-balance>V</button>
+              <button type="button" class="row-cancel" data-cancel-account-balance>X</button>
+            </span>
+          </td>
+          <td class="num {{ row.transaction_total_class }}">{{ row.transaction_total }}</td>
+          <td class="num {{ row.current_class }} {{ row.current_defined_class }}" data-account-current-cell>{{ row.current_display }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">Geen saldo ingevoerd.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <h2 class="subsection-title">Transferts</h2>
+    <table class="overview-table transfer-table">
+      <thead><tr><th>Datum</th><th>Rekening</th><th>Rubriek</th><th class="num">Bedrag</th></tr></thead>
+      <tbody>
+        {% for row in content.transfer_rows %}
+        <tr>
+          <td>{{ row.date }}</td>
+          <td>{{ row.account_name }}</td>
+          <td>{{ row.label }}</td>
+          <td class="num {{ row.amount_class }}">{{ row.amount }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">Geen overschrijving.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if content.transfer_rows %}
+      <tfoot>
+        <tr class="total-row">
+          <th colspan="3">Totaal</th>
+          <th class="num {{ content.transfer_total.amount_class }}">{{ content.transfer_total.amount }}</th>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+  <div class="panel">
+    <h2>Inkomsten / uitgaven per rubriek</h2>
+    <table class="overview-table">
+      <thead><tr><th title='Gegroepeerd op de tekst vóór "-".'>Rubriek</th><th class="num">Inkomsten</th><th class="num">Uitgaven</th><th class="num">Netto</th></tr></thead>
+      <tbody>
+        {% for row in content.summary_rows %}
+        <tr>
+          <td><a href="{{ row.href }}">{{ row.label_group }}</a></td>
+          <td class="num positive">{{ row.income }}</td>
+          <td class="num negative">{{ row.expense }}</td>
+          <td class="num {{ row.net_class }}">{{ row.net }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">Geen transactie.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if content.summary_rows %}
+      <tfoot>
+        <tr class="total-row">
+          <th>Totaal</th>
+          <th class="num positive">{{ content.summary_total.income }}</th>
+          <th class="num negative">{{ content.summary_total.expense }}</th>
+          <th class="num {{ content.summary_total.net_class }}">{{ content.summary_total.net }}</th>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</section>
+{% elif content.type == "budget" %}
+<script>window.BUDGET_LABELS = {{ content.labels_json | safe }};</script>
+<section class="panel sheet-panel">
+  <div class="section-head">
+    <h2>Budget</h2>
+    <span class="save-state" data-save-state></span>
+  </div>
+  <table class="sheet-table budget-schedule-table" data-budget-schedule-table data-period-id="{{ content.period_id }}">
+    <thead><tr><th class="row-index-head">#</th><th>Rubriek</th><th class="num">Bedrag</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for row in content.rows %}
+      <tr class="budget-schedule-row budget-status-{{ row.status }}" data-budget-schedule-id="{{ row.id }}">
+        <td class="row-index-cell"><span class="row-index-value">{{ row.index }}</span></td>
+        <td>{{ row.label }}</td>
+        <td class="num">{{ row.amount }}</td>
+        <td><span class="budget-status-pill" data-budget-status>{{ row.status_label }}</span></td>
+        <td class="row-actions budget-actions">
+          {% for action in row.actions %}
+          <button type="button" class="{{ action.class }} icon-button" {{ action.data_attr }} title="{{ action.title }}" aria-label="{{ action.title }}">{{ action.icon | safe }}</button>
+          {% endfor %}
+          <div class="budget-account-list" data-budget-account-list hidden>{% for account in row.account_choices %}<button type="button" class="budget-account-choice" data-budget-account="{{ account.id }}">{{ account.name }}</button>{% endfor %}</div>
+          <div class="budget-created" data-budget-created hidden></div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">Geen gepland item.</td></tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="table-actions-row">
+        <td colspan="4"></td>
+        <td class="row-actions table-footer-actions">
+          <button type="button" class="row-confirm icon-button" data-add-budget-schedule title="Budgetitem toevoegen" aria-label="Budgetitem toevoegen">{{ content.plus_icon | safe }}</button>
+          <button type="button" class="row-delete icon-button" data-budget-schedule-clear title="Alle budgetitems verwijderen" aria-label="Alle budgetitems verwijderen">{{ content.clear_icon | safe }}</button>
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+</section>
+{% elif content.type == "account" %}
+<script>window.BUDGET_LABELS = {{ content.labels_json | safe }};</script>
+<section class="panel sheet-panel">
+  <div class="section-head">
+    <h2>{{ content.account_name }}</h2>
+    <span class="save-state" data-save-state></span>
+  </div>
+  <table class="sheet-table transaction-sheet-table" data-transaction-table data-period-id="{{ content.period_id }}" data-account-id="{{ content.account_id }}" data-opening-balance="{{ content.opening_data }}" data-number-decimals="{{ content.number_decimals }}">
+    <colgroup>
+      <col class="transaction-index-col">
+      <col class="transaction-date-col">
+      <col class="transaction-label-col">
+      <col class="transaction-amount-col">
+      <col class="transaction-comment-col">
+      <col class="transaction-actions-col">
+    </colgroup>
+    <thead><tr><th class="row-index-head">#</th><th>Datum</th><th>Rubriek</th><th class="num">Bedrag</th><th>Opmerking</th><th></th></tr></thead>
+    <tbody>
+      {% for row in content.rows %}
+      <tr class="{{ row.amount_class }}" data-transaction-id="{{ row.id }}" data-sort-date="{{ row.sort_date }}">
+        <td class="row-index-cell"><button type="button" class="drag-handle" draggable="true" data-drag-handle title="Verplaatsen">↕</button><span class="row-index-value" data-field="sort_index" data-original="{{ row.sort_index }}" title="{{ row.balance_title }}" aria-label="{{ row.balance_title }}">{{ row.sort_index }}</span></td>
+        <td class="editable" contenteditable="true" data-save="transaction" data-field="date" data-original="{{ row.date }}">{{ row.date }}</td>
+        <td>{{ row.label_picker | safe }}</td>
+        <td class="editable num" contenteditable="true" data-save="transaction" data-field="amount" data-original="{{ row.amount }}">{{ row.amount }}</td>
+        <td class="editable" contenteditable="true" data-save="transaction" data-field="comment" data-original="{{ row.comment }}">{{ row.comment }}</td>
+        <td class="row-actions">
+          {% if row.warning_reason %}
+          <span class="transaction-warning-icon icon-button" title="{{ row.warning_reason }}" aria-label="{{ row.warning_reason }}">{{ row.warning_icon | safe }}</span>
+          {% endif %}
+          {{ row.row_actions | safe }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="transaction-balance-row">
+        <td colspan="6" data-current-balance-text>{{ content.current_balance }}</td>
+      </tr>
+      <tr class="table-actions-row">
+        <td colspan="5"></td>
+        <td class="row-actions table-footer-actions">
+          <button type="button" class="row-confirm icon-button" data-add-row title="Rij toevoegen" aria-label="Rij toevoegen">{{ content.plus_icon | safe }}</button>
+          <button type="button" class="row-delete icon-button" data-remove-all title="Alle rijen verwijderen" aria-label="Alle rijen verwijderen">{{ content.clear_icon | safe }}</button>
+          <a class="button ghost import-button icon-button" href="/period/{{ content.period_id }}/import?account={{ content.account_id }}" title="Importer CSV" aria-label="Importer CSV">{{ content.upload_icon | safe }}</a>
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+</section>
+{% else %}
+<section class="panel"><h2>Rekening introuvable</h2></section>
+{% endif %}
