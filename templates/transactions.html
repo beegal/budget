@@ -1,6 +1,6 @@
 <section class="page-title"><h1>Transactions</h1></section>
 <script>window.BUDGET_LABELS = {{ labels_json | safe }};</script>
-<form class="filters transaction-filters" method="get" data-period-auto-submit data-filter-auto-submit>
+<form class="filters transaction-filters" method="get" data-multi-auto-submit data-filter-auto-submit>
   {% include "components/period_selector.html" %}
   {% include "components/account_selector.html" %}
   {{ label_filter | safe }}

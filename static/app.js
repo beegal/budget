@@ -1244,33 +1244,33 @@ async function createLabelFromPicker(picker) {
   else if (input.dataset.save) await saveCell(input);
 }
 
-function periodFilterCheckboxes(filter) {
+function multiFilterCheckboxes(filter) {
   if (!filter) return [];
-  return Array.from(filter.querySelectorAll("[data-period-filter-checkbox]"));
+  return Array.from(filter.querySelectorAll("[data-multi-filter-checkbox]"));
 }
 
-function periodFilterSelectedIds(filter) {
-  return periodFilterCheckboxes(filter)
+function multiFilterSelectedIds(filter) {
+  return multiFilterCheckboxes(filter)
     .filter((checkbox) => checkbox.checked)
     .map((checkbox) => checkbox.value);
 }
 
-function renderPeriodFilterTags(filter) {
+function renderMultiFilterTags(filter) {
   if (!filter) return;
-  const tagBox = filter.querySelector("[data-period-tag-box]");
-  const input = filter.querySelector("[data-period-tag-input]");
+  const tagBox = filter.querySelector("[data-multi-tag-box]");
+  const input = filter.querySelector("[data-multi-tag-input]");
   if (!tagBox || !input) return;
-  tagBox.querySelectorAll("[data-period-tag]").forEach((tag) => tag.remove());
-  periodFilterCheckboxes(filter)
+  tagBox.querySelectorAll("[data-multi-tag]").forEach((tag) => tag.remove());
+  multiFilterCheckboxes(filter)
     .filter((checkbox) => checkbox.checked)
     .forEach((checkbox) => {
       const tag = document.createElement("span");
-      tag.className = "period-filter-tag";
-      tag.dataset.periodTag = checkbox.value;
-      tag.textContent = checkbox.dataset.periodName || checkbox.value;
+      tag.className = "multi-filter-tag";
+      tag.dataset.multiTag = checkbox.value;
+      tag.textContent = checkbox.dataset.multiName || checkbox.value;
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.dataset.periodTagRemove = "";
+      remove.dataset.multiTagRemove = "";
       remove.setAttribute("aria-label", `Retirer ${tag.textContent}`);
       remove.textContent = "x";
       tag.appendChild(remove);
@@ -1278,55 +1278,55 @@ function renderPeriodFilterTags(filter) {
     });
 }
 
-function syncPeriodFilter(filter, mode = "explicit") {
+function syncMultiFilter(filter, mode = "explicit") {
   if (!filter) return;
-  const hidden = filter.querySelector("[data-period-filter-value]");
-  const checkboxes = periodFilterCheckboxes(filter);
-  const selectedIds = periodFilterSelectedIds(filter);
+  const hidden = filter.querySelector("[data-multi-filter-value]");
+  const checkboxes = multiFilterCheckboxes(filter);
+  const selectedIds = multiFilterSelectedIds(filter);
   if (hidden) {
     if (mode === "all" || (checkboxes.length > 0 && selectedIds.length === checkboxes.length)) hidden.value = "all";
     else if (selectedIds.length === 0) hidden.value = "all";
     else hidden.value = selectedIds.join(",");
   }
-  renderPeriodFilterTags(filter);
+  renderMultiFilterTags(filter);
 }
 
-function addPeriodFilterTag(filter, value) {
+function addMultiFilterTag(filter, value) {
   if (!filter) return false;
   const needle = normalized(value);
   if (!needle) return false;
-  const checkboxes = periodFilterCheckboxes(filter);
-  const match = checkboxes.find((checkbox) => normalized(checkbox.dataset.periodName || "") === needle)
+  const checkboxes = multiFilterCheckboxes(filter);
+  const match = checkboxes.find((checkbox) => normalized(checkbox.dataset.multiName || "") === needle)
     || checkboxes.find((checkbox) => normalized(checkbox.value) === needle)
-    || checkboxes.find((checkbox) => normalized(checkbox.dataset.periodName || "").includes(needle));
+    || checkboxes.find((checkbox) => normalized(checkbox.dataset.multiName || "").includes(needle));
   if (!match) return false;
   match.checked = true;
-  syncPeriodFilter(filter);
+  syncMultiFilter(filter);
   return true;
 }
 
-function markPeriodFilterDirty(filter) {
-  if (!filter?.closest("form[data-period-auto-submit]")) return;
-  filter.dataset.periodFilterDirty = "true";
+function markMultiFilterDirty(filter) {
+  if (!filter?.closest("form[data-multi-auto-submit]")) return;
+  filter.dataset.multiFilterDirty = "true";
 }
 
-function submitPeriodFilterIfDirty(filter) {
-  const form = filter?.closest("form[data-period-auto-submit]");
-  if (!form || filter.dataset.periodFilterDirty !== "true") return;
-  delete filter.dataset.periodFilterDirty;
+function submitMultiFilterIfDirty(filter) {
+  const form = filter?.closest("form[data-multi-auto-submit]");
+  if (!form || filter.dataset.multiFilterDirty !== "true") return;
+  delete filter.dataset.multiFilterDirty;
   submitFilterForm(form);
 }
 
-function closePeriodFilter(filter) {
-  const menu = filter?.querySelector("[data-period-filter-menu]");
+function closeMultiFilter(filter) {
+  const menu = filter?.querySelector("[data-multi-filter-menu]");
   if (!menu || menu.hidden) return;
   menu.hidden = true;
-  submitPeriodFilterIfDirty(filter);
+  submitMultiFilterIfDirty(filter);
 }
 
-function closeOpenPeriodFilters(exceptFilter = null) {
-  document.querySelectorAll("[data-period-filter]").forEach((filter) => {
-    if (filter !== exceptFilter) closePeriodFilter(filter);
+function closeOpenMultiFilters(exceptFilter = null) {
+  document.querySelectorAll("[data-multi-filter]").forEach((filter) => {
+    if (filter !== exceptFilter) closeMultiFilter(filter);
   });
 }
 
@@ -1368,11 +1368,11 @@ document.addEventListener("focusin", (event) => {
   if (editable) editable.dataset.before = editable.textContent.trim();
   const input = event.target.closest("input[data-save]");
   if (input) input.dataset.before = input.value.trim();
-  const periodTagInput = event.target.closest("[data-period-tag-input]");
-  if (periodTagInput) {
-    const filter = periodTagInput.closest("[data-period-filter]");
-    closeOpenPeriodFilters(filter);
-    const menu = filter?.querySelector("[data-period-filter-menu]");
+  const multiTagInput = event.target.closest("[data-multi-tag-input]");
+  if (multiTagInput) {
+    const filter = multiTagInput.closest("[data-multi-filter]");
+    closeOpenMultiFilters(filter);
+    const menu = filter?.querySelector("[data-multi-filter-menu]");
     if (menu) menu.hidden = false;
   }
   const transactionRow = event.target.closest("[data-transaction-table] tr[data-transaction-id]");
@@ -1439,15 +1439,15 @@ document.addEventListener("keydown", async (event) => {
   const periodCreateInput = event.target.closest("[data-period-create-form] input");
   const budgetScheduleInput = event.target.closest("[data-budget-schedule-field], [data-budget-schedule-new-row] [data-label-input]");
   const accountBalanceInput = event.target.closest("[data-balance-input]");
-  const periodTagInput = event.target.closest("[data-period-tag-input]");
+  const multiTagInput = event.target.closest("[data-multi-tag-input]");
 
-  if ((event.key === "Enter" || event.key === ",") && periodTagInput) {
+  if ((event.key === "Enter" || event.key === ",") && multiTagInput) {
     event.preventDefault();
-    const filter = periodTagInput.closest("[data-period-filter]");
-    const added = addPeriodFilterTag(filter, periodTagInput.value);
+    const filter = multiTagInput.closest("[data-multi-filter]");
+    const added = addMultiFilterTag(filter, multiTagInput.value);
     if (added) {
-      periodTagInput.value = "";
-      markPeriodFilterDirty(filter);
+      multiTagInput.value = "";
+      markMultiFilterDirty(filter);
     }
     return;
   }
@@ -1612,11 +1612,11 @@ document.addEventListener("change", (event) => {
     textarea.placeholder = placeholders[formatSelect?.value] || "";
   }
 
-  const periodCheckbox = event.target.closest("[data-period-filter-checkbox]");
-  if (periodCheckbox) {
-    const filter = periodCheckbox.closest("[data-period-filter]");
-    syncPeriodFilter(filter);
-    markPeriodFilterDirty(filter);
+  const multiCheckbox = event.target.closest("[data-multi-filter-checkbox]");
+  if (multiCheckbox) {
+    const filter = multiCheckbox.closest("[data-multi-filter]");
+    syncMultiFilter(filter);
+    markMultiFilterDirty(filter);
   }
 
   const autoSubmitSelect = event.target.closest("form[data-filter-auto-submit] select");
@@ -1645,13 +1645,13 @@ document.addEventListener("input", (event) => {
     if (autoSubmitForm) scheduleFilterSubmit(autoSubmitForm);
     return;
   }
-  const periodTagInput = event.target.closest("[data-period-tag-input]");
-  if (periodTagInput && periodTagInput.value.includes(",")) {
-    const parts = periodTagInput.value.split(",");
-    periodTagInput.value = parts.pop() || "";
-    const filter = periodTagInput.closest("[data-period-filter]");
-    const added = parts.map((part) => addPeriodFilterTag(filter, part)).some(Boolean);
-    if (added) markPeriodFilterDirty(filter);
+  const multiTagInput = event.target.closest("[data-multi-tag-input]");
+  if (multiTagInput && multiTagInput.value.includes(",")) {
+    const parts = multiTagInput.value.split(",");
+    multiTagInput.value = parts.pop() || "";
+    const filter = multiTagInput.closest("[data-multi-filter]");
+    const added = parts.map((part) => addMultiFilterTag(filter, part)).some(Boolean);
+    if (added) markMultiFilterDirty(filter);
   }
   const budgetScheduleInput = event.target.closest("[data-budget-schedule-field]");
   if (budgetScheduleInput) budgetScheduleInput.closest("tr")?.classList.add("dirty");
@@ -1742,52 +1742,52 @@ document.addEventListener("click", async (event) => {
   if (!event.target.closest("[data-account-merge-list], [data-merge-account]")) {
     closeAccountMergeLists();
   }
-  const periodFilterToggle = event.target.closest("[data-period-filter-toggle]");
-  if (periodFilterToggle) {
-    const filter = periodFilterToggle.closest("[data-period-filter]");
-    const menu = filter?.querySelector("[data-period-filter-menu]");
-    if (menu && !menu.hidden) closePeriodFilter(filter);
+  const multiFilterToggle = event.target.closest("[data-multi-filter-toggle]");
+  if (multiFilterToggle) {
+    const filter = multiFilterToggle.closest("[data-multi-filter]");
+    const menu = filter?.querySelector("[data-multi-filter-menu]");
+    if (menu && !menu.hidden) closeMultiFilter(filter);
     else {
-      closeOpenPeriodFilters(filter);
+      closeOpenMultiFilters(filter);
       if (menu) menu.hidden = false;
     }
     return;
   }
 
-  if (!event.target.closest("[data-period-filter]")) {
-    closeOpenPeriodFilters();
+  if (!event.target.closest("[data-multi-filter]")) {
+    closeOpenMultiFilters();
   }
 
-  const periodFilterAll = event.target.closest("[data-period-filter-all]");
-  if (periodFilterAll) {
-    const filter = periodFilterAll.closest("[data-period-filter]");
-    periodFilterCheckboxes(filter).forEach((checkbox) => {
+  const multiFilterAll = event.target.closest("[data-multi-filter-all]");
+  if (multiFilterAll) {
+    const filter = multiFilterAll.closest("[data-multi-filter]");
+    multiFilterCheckboxes(filter).forEach((checkbox) => {
       checkbox.checked = true;
     });
-    syncPeriodFilter(filter, "all");
-    markPeriodFilterDirty(filter);
+    syncMultiFilter(filter, "all");
+    markMultiFilterDirty(filter);
     return;
   }
 
-  const periodFilterNone = event.target.closest("[data-period-filter-none]");
-  if (periodFilterNone) {
-    const filter = periodFilterNone.closest("[data-period-filter]");
-    periodFilterCheckboxes(filter).forEach((checkbox) => {
+  const multiFilterNone = event.target.closest("[data-multi-filter-none]");
+  if (multiFilterNone) {
+    const filter = multiFilterNone.closest("[data-multi-filter]");
+    multiFilterCheckboxes(filter).forEach((checkbox) => {
       checkbox.checked = false;
     });
-    syncPeriodFilter(filter);
-    markPeriodFilterDirty(filter);
+    syncMultiFilter(filter);
+    markMultiFilterDirty(filter);
     return;
   }
 
-  const periodTagRemove = event.target.closest("[data-period-tag-remove]");
-  if (periodTagRemove) {
-    const filter = periodTagRemove.closest("[data-period-filter]");
-    const tag = periodTagRemove.closest("[data-period-tag]");
-    const checkbox = filter?.querySelector(`[data-period-filter-checkbox][value="${CSS.escape(tag?.dataset.periodTag || "")}"]`);
+  const multiTagRemove = event.target.closest("[data-multi-tag-remove]");
+  if (multiTagRemove) {
+    const filter = multiTagRemove.closest("[data-multi-filter]");
+    const tag = multiTagRemove.closest("[data-multi-tag]");
+    const checkbox = filter?.querySelector(`[data-multi-filter-checkbox][value="${CSS.escape(tag?.dataset.multiTag || "")}"]`);
     if (checkbox) checkbox.checked = false;
-    syncPeriodFilter(filter);
-    markPeriodFilterDirty(filter);
+    syncMultiFilter(filter);
+    markMultiFilterDirty(filter);
     return;
   }
 

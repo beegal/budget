@@ -1,4 +1,4 @@
-# Budget Web
+# Personal Finance
 
 Application web locale pour gérer un budget par périodes, comptes et intitulés.
 

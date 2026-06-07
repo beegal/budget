@@ -786,16 +786,16 @@ button:hover {
   padding: 8px 10px;
 }
 
-.transaction-filters .period-filter-toggle,
-.summary-filters .period-filter-toggle {
+.transaction-filters .multi-filter-toggle,
+.summary-filters .multi-filter-toggle {
   align-self: start;
   font-size: 0;
   min-width: 38px;
   padding: 8px 10px;
 }
 
-.transaction-filters .period-filter-toggle::before,
-.summary-filters .period-filter-toggle::before {
+.transaction-filters .multi-filter-toggle::before,
+.summary-filters .multi-filter-toggle::before {
   content: "▾";
   font-size: 16px;
   line-height: 1;
@@ -810,14 +810,14 @@ button:hover {
   padding: 8px 10px;
 }
 
-.period-multi-filter {
+.multi-filter {
   display: grid;
   gap: 6px;
   grid-template-columns: minmax(0, 1fr) auto;
   position: relative;
 }
 
-.period-tag-box {
+.multi-tag-box {
   align-items: center;
   background: #fff;
   border: 1px solid var(--line);
@@ -829,7 +829,7 @@ button:hover {
   padding: 4px 6px;
 }
 
-.period-tag-box input {
+.multi-tag-box input {
   border: 0;
   flex: 1 1 90px;
   min-height: 26px;
@@ -837,11 +837,11 @@ button:hover {
   padding: 2px;
 }
 
-.period-tag-box input:focus {
+.multi-tag-box input:focus {
   outline: 0;
 }
 
-.period-filter-tag {
+.multi-filter-tag {
   align-items: center;
   background: #e8f3f6;
   border: 1px solid #cbe2e8;
@@ -854,7 +854,7 @@ button:hover {
   padding: 3px 6px 3px 8px;
 }
 
-.period-filter-tag button {
+.multi-filter-tag button {
   background: transparent;
   color: var(--accent-strong);
   min-height: 0;
@@ -862,12 +862,12 @@ button:hover {
   padding: 0 2px;
 }
 
-.period-filter-toggle {
+.multi-filter-toggle {
   min-width: 94px;
   padding: 8px 10px;
 }
 
-.period-filter-menu {
+.multi-filter-menu {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -885,8 +885,8 @@ button:hover {
   z-index: 6;
 }
 
-.period-filter-menu label,
-.period-filter-option {
+.multi-filter-menu label,
+.multi-filter-option {
   align-items: center;
   background: transparent;
   border-radius: 4px;
@@ -903,13 +903,13 @@ button:hover {
   width: 100%;
 }
 
-.period-filter-option:hover,
-.period-filter-menu label:hover {
+.multi-filter-option:hover,
+.multi-filter-menu label:hover {
   background: #edf3f5;
   color: var(--text);
 }
 
-.period-filter-menu input {
+.multi-filter-menu input {
   min-height: auto;
   width: auto;
 }

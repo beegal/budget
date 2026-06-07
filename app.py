@@ -14,7 +14,7 @@ from database import db
 from endpoints import admin, api, imports, parameters, period, periods, static_files, summary, transactions
 
 
-application = FastAPI(title="Budget")
+application = FastAPI(title="Personal Finance")
 application.include_router(
     auth.fastapi_users.get_auth_router(auth.auth_backend),
     prefix="/auth/cookie",

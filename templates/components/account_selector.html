@@ -1,16 +1,16 @@
-<div class="period-multi-filter account-selector-filter" data-period-filter>
-  <input type="hidden" name="accounts" value="{{ account_selector.value }}" data-period-filter-value>
-  <div class="period-tag-box" data-period-tag-box>
+<div class="multi-filter account-selector-filter" data-multi-filter>
+  <input type="hidden" name="accounts" value="{{ account_selector.value }}" data-multi-filter-value>
+  <div class="multi-tag-box" data-multi-tag-box>
     {% for tag in account_selector.tags %}
-    <span class="period-filter-tag" data-period-tag="{{ tag.id }}">{{ tag.name }}<button type="button" data-period-tag-remove aria-label="Retirer {{ tag.name }}">x</button></span>
+    <span class="multi-filter-tag" data-multi-tag="{{ tag.id }}">{{ tag.name }}<button type="button" data-multi-tag-remove aria-label="Retirer {{ tag.name }}">x</button></span>
     {% endfor %}
-    <input type="text" data-period-tag-input placeholder="Filtre comptes">
+    <input type="text" data-multi-tag-input placeholder="Filtre comptes">
   </div>
-  <button type="button" class="period-filter-toggle" data-period-filter-toggle>Comptes</button>
-  <div class="period-filter-menu" data-period-filter-menu hidden>
-    <button type="button" class="period-filter-option" data-period-filter-all>Tous</button>
+  <button type="button" class="multi-filter-toggle" data-multi-filter-toggle>Comptes</button>
+  <div class="multi-filter-menu" data-multi-filter-menu hidden>
+    <button type="button" class="multi-filter-option" data-multi-filter-all>Tous</button>
     {% for account in account_selector.periods %}
-    <label><input type="checkbox" value="{{ account.id }}" data-period-filter-checkbox data-period-name="{{ account.name }}" {% if account.checked %}checked{% endif %}> {{ account.name }}</label>
+    <label><input type="checkbox" value="{{ account.id }}" data-multi-filter-checkbox data-multi-name="{{ account.name }}" {% if account.checked %}checked{% endif %}> {{ account.name }}</label>
     {% endfor %}
   </div>
 </div>
