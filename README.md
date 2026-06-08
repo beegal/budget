@@ -323,7 +323,7 @@ docker compose -f build/docker-compose.external-mysql.yml up --build
 
 ## Proxmox LXC Template
 
-The project can build a native Proxmox CT template without Docker. The template is based on Debian 12 and includes MariaDB inside the container.
+The project can build a native Proxmox CT template without Docker. The build starts from the official Proxmox Debian 12 standard template and adds Personal Finance plus MariaDB inside the container.
 
 Template contents:
 
@@ -340,27 +340,27 @@ Build locally on a Debian/Ubuntu host:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y debootstrap zstd
-VERSION=v1.0.0 build/lxc/build-template.sh
+sudo apt-get install -y zstd
+VERSION=v0.1.1 build/lxc/build-template.sh
 ```
 
 The output is:
 
 ```text
-dist/personal-finance-debian12-mariadb-amd64-v1.0.0.tar.zst
+dist/personal-finance-debian12-mariadb-amd64-v0.1.1.tar.zst
 ```
 
 Install on Proxmox by downloading the release asset into the CT template cache:
 
 ```bash
-wget -O /var/lib/vz/template/cache/personal-finance-debian12-mariadb-amd64-v1.0.0.tar.zst \
-  https://github.com/beegal/budget/releases/download/v1.0.0/personal-finance-debian12-mariadb-amd64-v1.0.0.tar.zst
+wget -O /var/lib/vz/template/cache/personal-finance-debian12-mariadb-amd64-v0.1.1.tar.zst \
+  https://github.com/beegal/budget/releases/download/v0.1.1/personal-finance-debian12-mariadb-amd64-v0.1.1.tar.zst
 ```
 
 Create the CT:
 
 ```bash
-pct create 120 local:vztmpl/personal-finance-debian12-mariadb-amd64-v1.0.0.tar.zst \
+pct create 120 local:vztmpl/personal-finance-debian12-mariadb-amd64-v0.1.1.tar.zst \
   --hostname personal-finance \
   --cores 1 \
   --memory 1024 \

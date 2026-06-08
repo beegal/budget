@@ -2,9 +2,8 @@
 
 This directory contains the files used to build a native Proxmox CT template for Personal Finance.
 
-The template includes:
+The build starts from the official Proxmox Debian 12 standard template and adds:
 
-- Debian 12 root filesystem.
 - MariaDB server inside the container.
 - Personal Finance installed in `/opt/personal-finance/app`.
 - A Python virtual environment with application dependencies.

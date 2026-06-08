@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y debootstrap zstd
+        run: sudo apt-get update && sudo apt-get install -y zstd
 
       - name: Build Proxmox LXC template
         env:

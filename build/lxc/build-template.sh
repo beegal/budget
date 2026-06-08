@@ -6,11 +6,12 @@ REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 VERSION="${VERSION:-${GITHUB_REF_NAME:-local}}"
 ARCH="${ARCH:-amd64}"
-SUITE="${SUITE:-bookworm}"
-MIRROR="${MIRROR:-http://deb.debian.org/debian}"
+PROXMOX_TEMPLATE_VERSION="${PROXMOX_TEMPLATE_VERSION:-12.12-1}"
+PROXMOX_TEMPLATE_URL="${PROXMOX_TEMPLATE_URL:-http://download.proxmox.com/images/system/debian-12-standard_${PROXMOX_TEMPLATE_VERSION}_${ARCH}.tar.zst}"
 BUILD_DIR="${BUILD_DIR:-${REPO_ROOT}/dist/lxc-build}"
 DIST_DIR="${DIST_DIR:-${REPO_ROOT}/dist}"
 ROOTFS="${BUILD_DIR}/rootfs"
+BASE_TEMPLATE="${BUILD_DIR}/base-template.tar.zst"
 TEMPLATE_NAME="personal-finance-debian12-mariadb-${ARCH}-${VERSION}.tar.zst"
 TEMPLATE_PATH="${DIST_DIR}/${TEMPLATE_NAME}"
 
@@ -29,15 +30,27 @@ run_root() {
     fi
 }
 
-need_command debootstrap
 need_command tar
 need_command zstd
+if command -v curl >/dev/null 2>&1; then
+    DOWNLOAD_COMMAND="curl -fsSL"
+elif command -v wget >/dev/null 2>&1; then
+    DOWNLOAD_COMMAND="wget -qO-"
+else
+    echo "Missing required command: curl or wget" >&2
+    exit 1
+fi
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR" "$DIST_DIR"
 
-echo "Building Debian ${SUITE} rootfs in ${ROOTFS}"
-run_root debootstrap --arch="$ARCH" --variant=minbase "$SUITE" "$ROOTFS" "$MIRROR"
+echo "Downloading official Proxmox Debian template"
+echo "$PROXMOX_TEMPLATE_URL"
+$DOWNLOAD_COMMAND "$PROXMOX_TEMPLATE_URL" > "$BASE_TEMPLATE"
+
+echo "Extracting Proxmox rootfs in ${ROOTFS}"
+mkdir -p "$ROOTFS"
+run_root tar --numeric-owner --use-compress-program=zstd -xf "$BASE_TEMPLATE" -C "$ROOTFS"
 
 echo "Preparing apt policy for image build"
 run_root install -m 755 /dev/null "$ROOTFS/usr/sbin/policy-rc.d"
@@ -64,6 +77,16 @@ echo "Configuring locale"
 run_root sh -c "printf 'en_US.UTF-8 UTF-8\nfr_FR.UTF-8 UTF-8\n' > '$ROOTFS/etc/locale.gen'"
 run_root chroot "$ROOTFS" /bin/sh -lc "locale-gen"
 run_root sh -c "printf 'LANG=en_US.UTF-8\n' > '$ROOTFS/etc/default/locale'"
+
+echo "Preparing network configuration for Proxmox"
+run_root mkdir -p "$ROOTFS/etc/network"
+if [ ! -f "$ROOTFS/etc/network/interfaces" ]; then
+    run_root sh -c "cat > '$ROOTFS/etc/network/interfaces' <<'EOF'
+auto lo
+iface lo inet loopback
+
+EOF"
+fi
 
 echo "Creating application user and directories"
 run_root chroot "$ROOTFS" /bin/sh -lc "
