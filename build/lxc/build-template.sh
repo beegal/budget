@@ -6,14 +6,17 @@ REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 VERSION="${VERSION:-${GITHUB_REF_NAME:-local}}"
 ARCH="${ARCH:-amd64}"
-PROXMOX_TEMPLATE_VERSION="${PROXMOX_TEMPLATE_VERSION:-12.12-1}"
-PROXMOX_TEMPLATE_URL="${PROXMOX_TEMPLATE_URL:-http://download.proxmox.com/images/system/debian-12-standard_${PROXMOX_TEMPLATE_VERSION}_${ARCH}.tar.zst}"
+PROXMOX_TEMPLATE_VERSION="${PROXMOX_TEMPLATE_VERSION:-latest}"
+PROXMOX_TEMPLATE_BASE_URL="${PROXMOX_TEMPLATE_BASE_URL:-http://download.proxmox.com/images/system}"
+PROXMOX_TEMPLATE_URL="${PROXMOX_TEMPLATE_URL:-}"
 BUILD_DIR="${BUILD_DIR:-${REPO_ROOT}/dist/lxc-build}"
 DIST_DIR="${DIST_DIR:-${REPO_ROOT}/dist}"
 ROOTFS="${BUILD_DIR}/rootfs"
 BASE_TEMPLATE="${BUILD_DIR}/base-template.tar.zst"
 TEMPLATE_NAME="personal-finance-debian12-mariadb-${ARCH}-${VERSION}.tar.zst"
 TEMPLATE_PATH="${DIST_DIR}/${TEMPLATE_NAME}"
+RESOLV_BACKUP="${BUILD_DIR}/resolv.conf.backup"
+RESOLV_WAS_PRESENT="${BUILD_DIR}/resolv.conf.was-present"
 
 need_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
@@ -30,23 +33,68 @@ run_root() {
     fi
 }
 
-need_command tar
-need_command zstd
+prepare_chroot_dns() {
+    if [ -e "$ROOTFS/etc/resolv.conf" ] || [ -L "$ROOTFS/etc/resolv.conf" ]; then
+        run_root cp -a "$ROOTFS/etc/resolv.conf" "$RESOLV_BACKUP"
+        : > "$RESOLV_WAS_PRESENT"
+    fi
+    run_root cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+}
+
+restore_chroot_dns() {
+    if [ -f "$RESOLV_WAS_PRESENT" ]; then
+        run_root cp -a "$RESOLV_BACKUP" "$ROOTFS/etc/resolv.conf"
+    else
+        run_root rm -f "$ROOTFS/etc/resolv.conf"
+    fi
+}
+
 if command -v curl >/dev/null 2>&1; then
-    DOWNLOAD_COMMAND="curl -fsSL"
+    download_stdout() {
+        curl -fsSL "$1"
+    }
 elif command -v wget >/dev/null 2>&1; then
-    DOWNLOAD_COMMAND="wget -qO-"
+    download_stdout() {
+        wget -qO- "$1"
+    }
 else
     echo "Missing required command: curl or wget" >&2
     exit 1
 fi
 
+resolve_proxmox_template_url() {
+    if [ -n "$PROXMOX_TEMPLATE_URL" ]; then
+        printf "%s\n" "$PROXMOX_TEMPLATE_URL"
+        return
+    fi
+    if [ "$PROXMOX_TEMPLATE_VERSION" != "latest" ]; then
+        printf "%s/debian-12-standard_%s_%s.tar.zst\n" "$PROXMOX_TEMPLATE_BASE_URL" "$PROXMOX_TEMPLATE_VERSION" "$ARCH"
+        return
+    fi
+    template_name="$(
+        download_stdout "${PROXMOX_TEMPLATE_BASE_URL}/" \
+            | grep -Eo "debian-12-standard_[0-9][^\"]*_${ARCH}\\.tar\\.zst" \
+            | sort -V \
+            | tail -n 1
+    )"
+    if [ -z "$template_name" ]; then
+        echo "Could not resolve the latest Proxmox Debian 12 standard template." >&2
+        exit 1
+    fi
+    printf "%s/%s\n" "$PROXMOX_TEMPLATE_BASE_URL" "$template_name"
+}
+
+need_command tar
+need_command zstd
+
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR" "$DIST_DIR"
 
+RESOLVED_PROXMOX_TEMPLATE_URL="$(resolve_proxmox_template_url)"
+
 echo "Downloading official Proxmox Debian template"
-echo "$PROXMOX_TEMPLATE_URL"
-$DOWNLOAD_COMMAND "$PROXMOX_TEMPLATE_URL" > "$BASE_TEMPLATE"
+echo "$RESOLVED_PROXMOX_TEMPLATE_URL"
+download_stdout "$RESOLVED_PROXMOX_TEMPLATE_URL" > "$BASE_TEMPLATE"
 
 echo "Extracting Proxmox rootfs in ${ROOTFS}"
 mkdir -p "$ROOTFS"
@@ -55,9 +103,11 @@ run_root tar --numeric-owner --use-compress-program=zstd -xf "$BASE_TEMPLATE" -C
 echo "Preparing apt policy for image build"
 run_root install -m 755 /dev/null "$ROOTFS/usr/sbin/policy-rc.d"
 run_root sh -c "printf '#!/bin/sh\nexit 101\n' > '$ROOTFS/usr/sbin/policy-rc.d'"
+prepare_chroot_dns
 
 echo "Installing base packages"
 run_root chroot "$ROOTFS" /bin/sh -lc "
+    set -eu
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends \
@@ -75,7 +125,7 @@ run_root chroot "$ROOTFS" /bin/sh -lc "
 
 echo "Configuring locale"
 run_root sh -c "printf 'en_US.UTF-8 UTF-8\nfr_FR.UTF-8 UTF-8\n' > '$ROOTFS/etc/locale.gen'"
-run_root chroot "$ROOTFS" /bin/sh -lc "locale-gen"
+run_root chroot "$ROOTFS" /bin/sh -lc "set -eu; locale-gen"
 run_root sh -c "printf 'LANG=en_US.UTF-8\n' > '$ROOTFS/etc/default/locale'"
 
 echo "Preparing network configuration for Proxmox"
@@ -90,6 +140,7 @@ fi
 
 echo "Creating application user and directories"
 run_root chroot "$ROOTFS" /bin/sh -lc "
+    set -eu
     useradd --system --home-dir /opt/personal-finance --shell /usr/sbin/nologin personal-finance
     mkdir -p /opt/personal-finance/app /opt/personal-finance/data /etc/personal-finance /usr/local/sbin
 "
@@ -115,6 +166,7 @@ tar \
 
 echo "Installing application dependencies"
 run_root chroot "$ROOTFS" /bin/sh -lc "
+    set -eu
     cd /opt/personal-finance/app
     python3 -m venv .venv
     .venv/bin/python -m pip install --upgrade pip
@@ -132,6 +184,7 @@ run_root ln -sf /etc/systemd/system/personal-finance.service "$ROOTFS/etc/system
 
 echo "Setting permissions"
 run_root chroot "$ROOTFS" /bin/sh -lc "
+    set -eu
     chown -R root:root /opt/personal-finance/app
     chown -R personal-finance:personal-finance /opt/personal-finance/data
     chmod 750 /etc/personal-finance
@@ -140,12 +193,14 @@ run_root chroot "$ROOTFS" /bin/sh -lc "
 echo "Cleaning rootfs"
 run_root rm -f "$ROOTFS/usr/sbin/policy-rc.d"
 run_root chroot "$ROOTFS" /bin/sh -lc "
+    set -eu
     rm -rf /tmp/* /var/tmp/* /var/lib/apt/lists/*
     : > /etc/machine-id
     rm -f /var/lib/dbus/machine-id
     find /opt/personal-finance/app -type d -name __pycache__ -prune -exec rm -rf {} +
     find /opt/personal-finance/app -type f -name '*.pyc' -delete
 "
+restore_chroot_dns
 
 echo "Creating Proxmox CT template: ${TEMPLATE_PATH}"
 run_root tar --numeric-owner -C "$ROOTFS" -cf - . | zstd -19 -T0 -o "$TEMPLATE_PATH"
