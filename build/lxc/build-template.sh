@@ -41,6 +41,16 @@ prepare_chroot_dns() {
     run_root cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 }
 
+prepare_chroot_devices() {
+    run_root mkdir -p "$ROOTFS/dev"
+    run_root rm -f "$ROOTFS/dev/null" "$ROOTFS/dev/zero" "$ROOTFS/dev/random" "$ROOTFS/dev/urandom" "$ROOTFS/dev/tty"
+    run_root mknod -m 666 "$ROOTFS/dev/null" c 1 3
+    run_root mknod -m 666 "$ROOTFS/dev/zero" c 1 5
+    run_root mknod -m 666 "$ROOTFS/dev/random" c 1 8
+    run_root mknod -m 666 "$ROOTFS/dev/urandom" c 1 9
+    run_root mknod -m 666 "$ROOTFS/dev/tty" c 5 0
+}
+
 restore_chroot_dns() {
     if [ -f "$RESOLV_WAS_PRESENT" ]; then
         run_root cp -a "$RESOLV_BACKUP" "$ROOTFS/etc/resolv.conf"
@@ -103,6 +113,7 @@ run_root tar --numeric-owner --use-compress-program=zstd -xf "$BASE_TEMPLATE" -C
 echo "Preparing apt policy for image build"
 run_root install -m 755 /dev/null "$ROOTFS/usr/sbin/policy-rc.d"
 run_root sh -c "printf '#!/bin/sh\nexit 101\n' > '$ROOTFS/usr/sbin/policy-rc.d'"
+prepare_chroot_devices
 prepare_chroot_dns
 
 echo "Installing base packages"

@@ -341,39 +341,39 @@ Build locally on a Debian/Ubuntu host:
 ```bash
 sudo apt-get update
 sudo apt-get install -y zstd
-VERSION=v0.1.2 build/lxc/build-template.sh
+VERSION=v0.1.3 build/lxc/build-template.sh
 ```
 
 By default the build downloads the latest official Proxmox Debian 12 standard template from `download.proxmox.com`. To pin a base template version:
 
 ```bash
-PROXMOX_TEMPLATE_VERSION=12.12-1 VERSION=v0.1.2 build/lxc/build-template.sh
+PROXMOX_TEMPLATE_VERSION=12.12-1 VERSION=v0.1.3 build/lxc/build-template.sh
 ```
 
 To use a custom base template URL:
 
 ```bash
 PROXMOX_TEMPLATE_URL=http://download.proxmox.com/images/system/debian-12-standard_12.12-1_amd64.tar.zst \
-  VERSION=v0.1.2 build/lxc/build-template.sh
+  VERSION=v0.1.3 build/lxc/build-template.sh
 ```
 
 The output is:
 
 ```text
-dist/personal-finance-debian12-mariadb-amd64-v0.1.2.tar.zst
+dist/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst
 ```
 
 Install on Proxmox by downloading the release asset into the CT template cache:
 
 ```bash
-wget -O /var/lib/vz/template/cache/personal-finance-debian12-mariadb-amd64-v0.1.2.tar.zst \
-  https://github.com/beegal/budget/releases/download/v0.1.2/personal-finance-debian12-mariadb-amd64-v0.1.2.tar.zst
+wget -O /var/lib/vz/template/cache/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst \
+  https://github.com/beegal/budget/releases/download/v0.1.3/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst
 ```
 
 Create the CT:
 
 ```bash
-pct create 120 local:vztmpl/personal-finance-debian12-mariadb-amd64-v0.1.2.tar.zst \
+pct create 120 local:vztmpl/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst \
   --hostname personal-finance \
   --cores 1 \
   --memory 1024 \
