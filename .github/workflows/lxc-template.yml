@@ -1,0 +1,44 @@
+name: Proxmox LXC Template
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Template version, for example v1.0.0"
+        required: false
+        default: "manual"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y debootstrap zstd
+
+      - name: Build Proxmox LXC template
+        env:
+          VERSION: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version || 'manual' }}
+        run: build/lxc/build-template.sh
+
+      - name: Upload template artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxmox-lxc-template
+          path: dist/*.tar.zst
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.zst
+          generate_release_notes: true

@@ -1,0 +1,14 @@
+[Unit]
+Description=Initialize Personal Finance secrets and MariaDB database
+After=network-online.target mariadb.service
+Wants=network-online.target
+Requires=mariadb.service
+ConditionPathExists=!/etc/personal-finance/firstboot.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/personal-finance-firstboot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,78 @@
+#!/bin/sh
+set -eu
+
+CONFIG_DIR="/etc/personal-finance"
+CONFIG_FILE="${CONFIG_DIR}/personal-finance.env"
+STATE_FILE="${CONFIG_DIR}/firstboot.done"
+APP_DIR="/opt/personal-finance/app"
+
+generate_secret() {
+    python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+}
+
+sql_escape() {
+    printf "%s" "$1" | sed "s/'/''/g"
+}
+
+wait_for_mariadb() {
+    deadline=$(($(date +%s) + 60))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if mariadb --protocol=socket -uroot -e "SELECT 1" >/dev/null 2>&1; then
+            return 0
+        fi
+        if [ "${BUDGET_MYSQL_ROOT_PASSWORD:-}" ] && mariadb --protocol=socket -uroot --password="$BUDGET_MYSQL_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "MariaDB is not ready after 60 seconds." >&2
+    return 1
+}
+
+mkdir -p "$CONFIG_DIR" /opt/personal-finance/data
+chmod 750 "$CONFIG_DIR"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    MYSQL_ROOT_PASSWORD="$(generate_secret)"
+    MYSQL_APP_PASSWORD="$(generate_secret)"
+    AUTH_SECRET="$(generate_secret)"
+    {
+        printf 'BUDGET_DB_BACKEND=mysql\n'
+        printf 'BUDGET_MYSQL_HOST=127.0.0.1\n'
+        printf 'BUDGET_MYSQL_PORT=3306\n'
+        printf 'BUDGET_MYSQL_DATABASE=budget\n'
+        printf 'BUDGET_MYSQL_USER=budget\n'
+        printf 'BUDGET_MYSQL_PASSWORD=%s\n' "$MYSQL_APP_PASSWORD"
+        printf 'BUDGET_MYSQL_ROOT_USER=root\n'
+        printf 'BUDGET_MYSQL_ROOT_PASSWORD=%s\n' "$MYSQL_ROOT_PASSWORD"
+        printf 'BUDGET_AUTH_SECRET=%s\n' "$AUTH_SECRET"
+        printf 'BUDGET_AUTH_COOKIE_SECURE=0\n'
+        printf 'BUDGET_AUTH_LIFETIME=2592000\n'
+    } > "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
+fi
+
+set -a
+. "$CONFIG_FILE"
+set +a
+
+wait_for_mariadb
+
+ROOT_PASSWORD_ESCAPED="$(sql_escape "$BUDGET_MYSQL_ROOT_PASSWORD")"
+if mariadb --protocol=socket -uroot -e "SELECT 1" >/dev/null 2>&1; then
+    mariadb --protocol=socket -uroot <<SQL
+ALTER USER 'root'@'localhost' IDENTIFIED VIA mysql_native_password USING PASSWORD('${ROOT_PASSWORD_ESCAPED}');
+FLUSH PRIVILEGES;
+SQL
+else
+    mariadb --protocol=socket -uroot --password="$BUDGET_MYSQL_ROOT_PASSWORD" -e "SELECT 1" >/dev/null
+fi
+
+cd "$APP_DIR"
+/opt/personal-finance/app/.venv/bin/python budget_cli.py --db-backend mysql db create
+
+chown -R personal-finance:personal-finance /opt/personal-finance
+touch "$STATE_FILE"
+chmod 600 "$STATE_FILE"
+
+systemctl disable personal-finance-firstboot.service >/dev/null 2>&1 || true

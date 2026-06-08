@@ -321,6 +321,63 @@ BUDGET_MYSQL_PASSWORD=... \
 docker compose -f build/docker-compose.external-mysql.yml up --build
 ```
 
+## Proxmox LXC Template
+
+The project can build a native Proxmox CT template without Docker. The template is based on Debian 12 and includes MariaDB inside the container.
+
+Template contents:
+
+- Personal Finance installed in `/opt/personal-finance/app`.
+- MariaDB installed locally in the CT.
+- Application data directory at `/opt/personal-finance/data`.
+- Runtime configuration at `/etc/personal-finance/personal-finance.env`.
+- `personal-finance-firstboot.service` to generate secrets, create the MariaDB database/user and initialize the schema.
+- `personal-finance.service` to run Uvicorn on port `8000`.
+
+No password or auth secret is baked into the template. First boot generates them and stores them in `/etc/personal-finance/personal-finance.env`.
+
+Build locally on a Debian/Ubuntu host:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y debootstrap zstd
+VERSION=v1.0.0 build/lxc/build-template.sh
+```
+
+The output is:
+
+```text
+dist/personal-finance-debian12-mariadb-amd64-v1.0.0.tar.zst
+```
+
+Install on Proxmox by downloading the release asset into the CT template cache:
+
+```bash
+wget -O /var/lib/vz/template/cache/personal-finance-debian12-mariadb-amd64-v1.0.0.tar.zst \
+  https://github.com/beegal/budget/releases/download/v1.0.0/personal-finance-debian12-mariadb-amd64-v1.0.0.tar.zst
+```
+
+Create the CT:
+
+```bash
+pct create 120 local:vztmpl/personal-finance-debian12-mariadb-amd64-v1.0.0.tar.zst \
+  --hostname personal-finance \
+  --cores 1 \
+  --memory 1024 \
+  --rootfs local-lvm:8 \
+  --net0 name=eth0,bridge=vmbr0,ip=dhcp \
+  --unprivileged 1 \
+  --start 1
+```
+
+After the first boot, browse to:
+
+```text
+http://<container-ip>:8000
+```
+
+In the Proxmox UI, the same `.tar.zst` can be downloaded through `Storage > CT Templates > Download from URL`, then selected when creating a CT.
+
 ## GitHub Actions
 
 `.github/workflows/docker-image.yml` runs tests and Docker builds on pushes to `main`, pushes to `release`, pull requests and manual dispatches.
@@ -345,6 +402,8 @@ Required secrets:
 
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
+
+`.github/workflows/lxc-template.yml` builds the native Proxmox LXC template. Manual runs upload the template as an artifact. Pushing a `v*` tag also creates or updates a GitHub Release and attaches the `.tar.zst` CT template.
 
 ### Run The GitHub Workflow Locally
 
@@ -378,6 +437,9 @@ scripts/run-github-workflow-local.sh --push
 ├── config.py
 ├── config.yaml
 ├── database.py
+├── build/
+│   ├── Dockerfile
+│   └── lxc/
 ├── initial-data.yaml
 ├── i18n.py
 ├── user_preferences.py

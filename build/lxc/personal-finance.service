@@ -1,0 +1,18 @@
+[Unit]
+Description=Personal Finance web application
+After=network-online.target mariadb.service personal-finance-firstboot.service
+Wants=network-online.target
+Requires=mariadb.service
+
+[Service]
+Type=simple
+User=personal-finance
+Group=personal-finance
+WorkingDirectory=/opt/personal-finance/app
+EnvironmentFile=/etc/personal-finance/personal-finance.env
+ExecStart=/opt/personal-finance/app/.venv/bin/uvicorn app:application --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
