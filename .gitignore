@@ -1,8 +1,12 @@
 __pycache__/
 *.py[cod]
+*.swp
+.*.swp
 data/*.sqlite3*
 budget.db
 .DS_Store
+~$*.xls
+~$*.xlsx
 Personnal-Budget*.xls
 Personnal-Budget*.xlsx
 

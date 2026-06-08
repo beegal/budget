@@ -67,7 +67,7 @@ load_config
 if [ "${BUDGET_DB_BACKEND:-sqlite}" = "mysql" ]; then
     wait_for_mysql
     if [ "${BUDGET_MYSQL_CREATE_DATABASE:-0}" = "1" ]; then
-        python budget_cli.py --db-backend mysql --create
+        python budget_cli.py --db-backend mysql db create
     fi
 fi
 

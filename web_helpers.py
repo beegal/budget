@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from backend_messages import template_not_found
 from i18n import current_language, current_language_locale_tag, frontend_messages, language_options, translate
 from config import strip_accents
 from user_preferences import current_date_order, current_month_lookup, current_number_decimals, current_preferences
@@ -34,7 +35,7 @@ def render_template(template_name: str, **context: object) -> str:
     template_path = TEMPLATES_DIR / language / template_name
     fallback_path = TEMPLATES_DIR / template_name
     if not template_path.exists() and not fallback_path.exists():
-        return f"Template {template_name} not found"
+        return template_not_found(template_name)
     return jinja_env(language).get_template(template_name).render(**context)
 
 

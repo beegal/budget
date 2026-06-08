@@ -1,47 +1,60 @@
 # Personal Finance
 
-Application web locale pour gérer un budget par périodes, comptes et intitulés.
+Personal Finance is a local web application for managing budgets by periods, accounts and labels.
 
-Le projet reste volontairement simple: une application FastAPI locale, une base SQLite ou MySQL, du HTML rendu côté serveur avec Jinja, et du JavaScript/CSS vanilla pour l'édition directe des tableaux.
+The project intentionally stays simple: FastAPI, server-rendered Jinja templates, vanilla JavaScript/CSS, and a SQLAlchemy Core database layer that can use SQLite, MySQL or a full SQLAlchemy database URL.
 
-## Fonctionnalités
+## Features
 
-- créer et consulter des périodes budgétaires;
-- gérer les comptes, les intitulés et un budget mensuel type;
-- encoder les mouvements compte par compte;
-- éditer les tableaux directement avec `Enter` pour valider et `Esc` pour annuler;
-- réordonner les comptes et transactions par drag and drop;
-- consulter une synthèse des soldes, entrées, sorties et transferts;
-- consulter une synthèse globale multi-périodes par intitulé;
-- créer automatiquement un onglet `Budget` par période à partir du budget mensuel;
-- instancier une entrée planifiée du budget dans un compte réel;
-- importer des transactions CSV dans un compte;
-- filtrer les transactions par périodes, comptes et intitulés avec rafraîchissement réactif;
-- masquer les comptes vides dans les périodes, avec ajout ponctuel via le bouton `+` des tabs.
+- Create and browse budget periods.
+- Manage accounts, transaction labels and a monthly budget template.
+- Enter transactions account by account.
+- Edit table rows inline with `Enter` to confirm and `Esc` to cancel.
+- Reorder accounts and transactions by drag and drop.
+- View balances, income, expenses, transfers and per-label summaries.
+- View a global multi-period summary.
+- Instantiate scheduled budget entries into real account transactions.
+- Import CSV/TSV transactions into an account.
+- Filter transactions by period, account and label.
+- Export/import one user's data from the UI.
+- Export/import the full database from the CLI.
+- Run with multiple users isolated by `user_id`.
 
-## Données
+## Project Stats
 
-La base SQLite locale se trouve dans:
+Approximate workspace stats, excluding local databases and temporary files:
+
+- 164 application files.
+- About 15,365 lines.
+- 28 Python files, about 5,915 lines.
+- 105 HTML/Jinja templates, about 3,730 lines.
+- 5 JavaScript files, about 2,137 lines.
+- 1 main CSS file, about 2,027 lines.
+- 4 locale YAML files: `fr`, `en`, `de`, `nl`.
+- 25 FastAPI routes.
+- 10 local SVG icons.
+
+## Data
+
+The default SQLite database is:
 
 ```text
 data/budget.sqlite3
 ```
 
-Le chemin peut être changé avec:
-
-```bash
-BUDGET_SQLITE_PATH=/chemin/budget.sqlite3 python3 app.py
-```
-
-La base n'est pas suivie par Git. À la première exécution, l'application crée le schéma et initialise les données depuis:
+It is not tracked by Git. On first startup, the application creates the schema only. Initial user data is created on the user's first authenticated request from:
 
 ```text
 initial-data.yaml
 ```
 
-Tables actives:
+The initial seed is tracked in `profile_seeded` with the key `initial-data`. This table is not a user preference table; it records one-shot bootstrap jobs so default data is not recreated if a user later deletes all their data.
+
+Active tables:
 
 - `users`
+- `user_profiles`
+- `profile_seeded`
 - `period`
 - `accounts`
 - `transaction_labels`
@@ -50,71 +63,79 @@ Tables actives:
 - `monthly_budget`
 - `budget_schedule`
 
-L'application ne dépend plus du fichier Excel initial.
-Le schéma courant est créé directement pour les bases neuves. Une migration légère conserve les données existantes en ajoutant `user_id` aux tables métier.
+Business tables are scoped by `user_id`, and endpoints must always filter reads and writes by the authenticated user.
 
-## Utilisateurs
-
-L'application est multi-user via FastAPI Users avec une authentification par cookie HTTP-only.
-
-- `/register`: registration rapide par email et mot de passe;
-- `/login`: connexion;
-- `/logout`: suppression du cookie de session.
-- `/admin`: interface réservée aux admins pour lister les utilisateurs, créer un utilisateur, changer un mot de passe, activer/désactiver un compte et attribuer/retirer le rôle admin.
-
-Chaque table métier contient `user_id` et toutes les lectures/écritures filtrent sur l'utilisateur connecté. Les données historiques sans utilisateur sont marquées temporairement avec un identifiant legacy, puis adoptées par le premier utilisateur qui s'enregistre.
-
-La table `users` contient aussi `last_login`, mis à jour quand un utilisateur authentifié accède à l'application.
-
-## Démarrer l'application
-
-Depuis le dossier du projet:
+## Run Locally
 
 ```bash
 python3 -m pip install -r requirements.txt
 python3 app.py
 ```
 
-Équivalent Uvicorn:
+Equivalent Uvicorn command:
 
 ```bash
 uvicorn app:application --host 127.0.0.1 --port 8000
 ```
 
-Puis ouvrir:
+Open:
 
 ```text
 http://127.0.0.1:8000
 ```
 
+## Tests
+
+Python unit tests use `unittest`:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+Current tests cover date parsing and display, language preference detection, translation fallback, user profile defaults and SQLAlchemy database URL handling.
+
+Docker/MySQL integration tests are opt-in because they build and run containers:
+
+```bash
+RUN_DOCKER_INTEGRATION=1 python3 -m unittest tests.integration.test_docker_mysql -v
+```
+
+The integration smoke test builds the application image, starts MySQL with Docker Compose, waits for the real HTTP application, verifies `/login`, verifies a static JavaScript asset, then removes the containers and volumes.
+If Docker is not running locally, the integration test tries Minikube's Docker environment, equivalent to `eval "$(minikube docker-env)"`, and uses `minikube ip` for HTTP checks. If neither Docker nor Minikube is available locally, the test is skipped. In GitHub Actions it is executed with `RUN_DOCKER_INTEGRATION=1` and is expected to pass.
+
 ## Configuration
 
-Le fichier `config.yaml` déclare les langues supportées et leurs valeurs par défaut:
+`config.yaml` declares supported UI languages and their default profile values:
 
 ```yaml
 languages:
-  - id: fr
-    label: Français
-    icon: 🇫🇷
-    locale: fr_FR.UTF-8
-    date-format: jj/mm/yy
   - id: en
     label: English
-    icon: 🇬🇧
+    icon: GB
     locale: en_US.UTF-8
     date-format: mm/dd/yy
 ```
 
-`date-format` accepte `jj/mm/yy`, `mm/jj/yy` ou `yy-mm-jj`. La `locale` reste un détail technique attaché à la langue pour les noms de mois et les APIs de formatage, elle n'est pas exposée dans le profil utilisateur.
+The supported date formats are:
 
-La base de données peut aussi être configurée par variables d'environnement:
+- `jj/mm/yy`
+- `mm/jj/yy`
+- `yy-mm-jj`
+
+The UI language is chosen from the long-lived `budget_language` cookie. On a first visit, the fallback comes from the browser `Accept-Language` header. Changing the UI language later does not rewrite an existing user's date or number preferences.
+
+## Database Configuration
+
+The application uses SQLAlchemy Core for business data connections and schema creation.
+
+Simple SQLite configuration:
 
 ```bash
 BUDGET_DB_BACKEND=sqlite
 BUDGET_SQLITE_PATH=data/budget.sqlite3
 ```
 
-Pour MySQL:
+Simple MySQL configuration:
 
 ```bash
 BUDGET_DB_BACKEND=mysql
@@ -125,7 +146,16 @@ BUDGET_MYSQL_USER=budget
 BUDGET_MYSQL_PASSWORD=...
 ```
 
-Configuration auth:
+Full SQLAlchemy URL configuration:
+
+```bash
+BUDGET_DATABASE_URL=sqlite:////path/to/budget.sqlite3 python3 app.py
+BUDGET_DATABASE_URL=mysql+pymysql://budget:pass@127.0.0.1:3306/budget python3 app.py
+```
+
+`BUDGET_DATABASE_URL` takes precedence over `BUDGET_DB_BACKEND`. FastAPI Users reuses the same configuration and automatically switches to async drivers where needed, such as `sqlite+aiosqlite` or `mysql+aiomysql`.
+
+Authentication settings:
 
 ```bash
 BUDGET_AUTH_SECRET=change-me
@@ -134,11 +164,9 @@ BUDGET_AUTH_COOKIE_SECURE=0
 BUDGET_AUTH_LIFETIME=2592000
 ```
 
-En production, `BUDGET_AUTH_SECRET` doit être une valeur longue et privée. Mets `BUDGET_AUTH_COOKIE_SECURE=1` derrière HTTPS.
+In production, `BUDGET_AUTH_SECRET` must be long and private. Set `BUDGET_AUTH_COOKIE_SECURE=1` behind HTTPS. If no auth secret is configured, the application generates a non-predictable secret at startup, which is safer than a hardcoded default but invalidates existing sessions on restart.
 
-Si `BUDGET_AUTH_SECRET` n'est pas défini, l'application génère un secret aléatoire non prédictible au démarrage. C'est plus sûr qu'une valeur par défaut hardcodée, mais les cookies existants deviennent invalides après un redémarrage. Pour conserver les sessions entre redémarrages, configure une valeur stable dans l'environnement.
-
-Pour créer la base et l'utilisateur MySQL avec le CLI:
+To create a MySQL database and user with the CLI:
 
 ```bash
 BUDGET_DB_BACKEND=mysql \
@@ -150,365 +178,75 @@ BUDGET_MYSQL_PASSWORD=... \
 python3 budget_cli.py --db-backend mysql db create
 ```
 
-Pour lancer l'application sur MySQL:
+MySQL databases are created with `CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`. Tables inherit the database defaults. The schema does not force a table engine and lets MySQL use its default engine, normally InnoDB.
 
-```bash
-BUDGET_DB_BACKEND=mysql \
-BUDGET_MYSQL_HOST=127.0.0.1 \
-BUDGET_MYSQL_PORT=3306 \
-BUDGET_MYSQL_DATABASE=budget \
-BUDGET_MYSQL_USER=budget \
-BUDGET_MYSQL_PASSWORD=... \
-python3 app.py
-```
+## UX Conventions
 
-Avec un Docker local classique, `BUDGET_MYSQL_HOST=127.0.0.1` fonctionne si le port MySQL est publié sur l'hôte. Avec Docker via Minikube (`eval $(minikube docker-env)`), le port est publié sur la VM Minikube; utilise alors:
+- `Enter` confirms inline edits.
+- `Esc` cancels inline edits.
+- `V` confirms, `X` cancels, `+` adds.
+- Disabled actions remain visible and explain the reason in a tooltip.
+- Empty multi-period or multi-account filters mean all values.
+- Period/account dropdown filters refresh when the dropdown closes.
+- Labels are grouped by the part before `-`, for example `Insurance - AG` is grouped under `Insurance`.
+- Positive amounts are green, negative amounts are red and unknown values are grey.
+- Open-ended period end dates are displayed as `current` in the active UI language.
 
-```bash
-export BUDGET_MYSQL_HOST="$(minikube ip)"
-```
+## Main Pages
 
-La base MySQL est créée/ajustée avec `CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`; les tables héritent de ce défaut. Le schéma ne force pas le moteur des tables et laisse MySQL utiliser son moteur par défaut, InnoDB. Cela reste compatible avec SQLite: deux noms qui diffèrent seulement par la casse, par exemple `CASH` et `Cash`, restent distincts.
+- `/`: period list and period creation.
+- `/parameters`: accounts, labels, monthly budget, user export/import.
+- `/period/<id>`: one period with summary, budget tab and visible accounts.
+- `/period/<id>/import?account=<id>`: CSV/TSV import for an account.
+- `/transactions`: global transaction view with filters and totals.
+- `/summary`: global multi-period summary.
+- `/profile`: user language and display preferences.
+- `/admin`: admin-only user management.
 
-## Pages principales
+## CSV Import
 
-- `/`: liste les périodes et permet d'en créer.
-- `/parameters`: gère les comptes, les intitulés et le budget mensuel.
-- `/period/<id>`: affiche une période avec synthèse, onglet `Budget`, puis les comptes visibles.
-- `/period/<id>/import?account=<id>`: importe des transactions CSV pour un compte.
-- `/transactions`: affiche une vue filtrable des transactions.
-- `/summary`: affiche une synthèse globale multi-périodes des entrées/sorties par intitulé.
-
-## Notes UI
-
-Dans les paramètres:
-
-- les comptes ont `Synthèse` et `Visible si vide`;
-- si `Visible si vide` est décoché, le compte n'apparaît plus comme tab dans une période tant qu'il est vide;
-- le tab `+` d'une période liste les comptes masqués et permet d'en ouvrir un pour encoder;
-- les listes longues de comptes, intitulés et budget mensuel sont scrollables;
-- le budget mensuel utilise le même sélecteur d'intitulés que les transactions;
-- les lignes positives/négatives sont colorées en vert/rouge;
-- les boutons d'action des lignes sont alignés dans une colonne dédiée.
-
-Dans les comptes:
-
-- les lignes sont triées par date puis par numéro;
-- le numéro `#` est géré par l'application;
-- les transactions peuvent être ajoutées, validées, annulées, supprimées ou réordonnées;
-- le bouton de suppression globale retire toutes les lignes du compte pour la période affichée;
-- le sélecteur d'intitulés est partagé avec le budget mensuel et propose la création d'un intitulé manquant.
-- le groupage des intitulés se fait sur la partie avant le séparateur `-`; les placeholders le rappellent dans les champs concernés.
-
-Dans les transactions globales:
-
-- les périodes et comptes utilisent un sélecteur à tags avec dropdown à checkboxes;
-- une sélection vide signifie toutes les périodes ou tous les comptes;
-- les sélections sont appliquées quand le dropdown est fermé, ce qui permet de cocher plusieurs valeurs sans refresh intermédiaire;
-- le filtre d'intitulé utilise le même dropdown que les transactions de compte;
-- changer compte ou intitulé rafraîchit la table;
-- la ligne de total affiche débit, crédit et total net.
-
-Dans la synthèse globale:
-
-- les périodes utilisent le même sélecteur à tags que les transactions;
-- cliquer sur un intitulé ouvre `/transactions` avec les périodes et l'intitulé préfiltrés.
-
-L'onglet `Budget` est spécial:
-
-- il affiche les entrées planifiées depuis `monthly_budget`;
-- il n'est pas éditable comme un compte classique;
-- une entrée planifiée peut être annulée ou instanciée dans un compte réel;
-- une transaction classique sauvegardée avec même période, intitulé et montant marque une entrée planifiée comme `found`.
-
-## Import CSV
-
-Format attendu:
+Expected columns:
 
 ```text
-Date,Intitulé,Montant,commentaire
+Date,Label,Amount,Comment
 ```
 
-L'écran permet de choisir:
+The import screen supports:
 
-- le format de date: `jj/mm/yy`, `mm/jj/yy` ou `yy-mm-jj`;
-- le format de fichier: CSV/TSV, avec ou sans en-tête.
+- `jj/mm/yy`
+- `mm/jj/yy`
+- `yy-mm-jj`
+- CSV or TSV
+- optional header row
+- two-digit or four-digit years
 
-Les années sur deux ou quatre chiffres sont acceptées. Le format de date sélectionné par défaut vient de `i18n.date-format` dans `config.yaml`.
+Imported dates must be valid. Transactions outside the current period are imported but flagged as inconsistent where relevant.
 
-Validation:
+## CLI
 
-- date obligatoire et dans la période;
-- montant numérique;
-- intitulé obligatoire;
-- les intitulés inconnus peuvent être créés automatiquement à l'import.
+The CLI uses Typer and Rich.
 
-## Développement récent
-
-- ajout de `Visible si vide` sur les comptes;
-- ajout d'un tab `+` dans les périodes pour ouvrir un compte masqué et encoder dessus;
-- scroll vertical sur les longues tables des paramètres;
-- largeur minimale sur la table des comptes pour garder le nom lisible;
-- coloration vert/rouge du budget mensuel;
-- factorisation du picker d'intitulés et des boutons d'action;
-- nettoyage des tables et colonnes non utilisées;
-- ajout d'une migration de schéma pour isoler les données par utilisateur;
-- ajout d'un build Docker Alpine Python et d'un workflow GitHub Actions;
-- ajout d'une page Synthèse globale;
-- ajout de filtres réactifs multi-périodes/multi-comptes dans Transactions;
-- ajout de la création inline d'utilisateurs dans l'administration;
-- secret d'authentification aléatoire au démarrage si `BUDGET_AUTH_SECRET` est absent.
-
-## Structure
-
-```text
-.
-├── app.py
-├── budget_cli.py
-├── config.py
-├── config.yaml
-├── components/
-│   ├── common.py
-│   ├── imports.py
-│   ├── parameters.py
-│   ├── period.py
-│   ├── periods.py
-│   └── transactions.py
-├── database.py
-├── initial-data.yaml
-├── README.md
-├── requirements.txt
-├── web_helpers.py
-├── .dockerignore
-├── .github/
-│   └── workflows/
-│       └── docker-image.yml
-├── build/
-│   └── Dockerfile
-├── data/
-│   └── budget.sqlite3
-├── endpoints/
-│   ├── __init__.py
-│   ├── admin.py
-│   ├── api.py
-│   ├── filters.py
-│   ├── imports.py
-│   ├── parameters.py
-│   ├── period.py
-│   ├── periods.py
-│   ├── static_files.py
-│   ├── summary.py
-│   └── transactions.py
-├── static/
-    ├── app.js
-    └── style.css
-└── templates/
-    ├── imports.html
-    ├── layout.html
-    ├── parameters.html
-    ├── period.html
-    ├── periods.html
-    ├── summary.html
-    └── transactions.html
-```
-
-Les endpoints préparent les données et délèguent le rendu HTML réutilisable au répertoire `components/`. Les templates dans `templates/` gardent les squelettes de pages, tandis que `components/` contient les composants dynamiques comme tabs, lignes de tables, boutons d'action, icônes et sélecteurs d'intitulés.
-
-## Docker
-
-Une image Docker peut être construite avec:
-
-```bash
-docker build -f build/Dockerfile -t beegal/budget:local .
-```
-
-Avec minikube:
-
-```bash
-eval $(minikube docker-env) && docker build -f build/Dockerfile -t beegal/budget:local .
-```
-
-Le conteneur écoute sur le port `8000` et utilise `/app/data` pour la base SQLite.
-
-Exemple d'exécution:
-
-```bash
-docker run --rm -p 8000:8000 -v "$(pwd)/data:/app/data" beegal/budget:local
-```
-
-### Docker avec MySQL géré
-
-Un fichier compose démarre l'application et une base MySQL:
-
-```bash
-BUDGET_MYSQL_ROOT_PASSWORD=... \
-BUDGET_MYSQL_PASSWORD=... \
-docker compose -f build/docker-compose.mysql.yml up --build
-```
-
-Volumes utilisés:
-
-- `budget-mysql-data`: données MySQL (`/var/lib/mysql`);
-- `budget-db-config`: copie des informations de connexion (`/app/config/db.env`);
-- `budget-app-data`: données locales de l'application.
-
-Au premier démarrage, le conteneur applicatif écrit `/app/config/db.env` si le fichier n'existe pas encore. Si les volumes existent déjà, le fichier est relu et la base MySQL garde ses données.
-
-Variables principales:
-
-- `BUDGET_HTTP_PORT`: port HTTP publié, par défaut `8000`;
-- `BUDGET_DB_BACKEND`: `sqlite` ou `mysql`;
-- `BUDGET_MYSQL_CREATE_DATABASE`: `1` pour créer/assurer la DB au démarrage, `0` sinon;
-- `BUDGET_MYSQL_HOST`, `BUDGET_MYSQL_PORT`;
-- `BUDGET_MYSQL_DATABASE`;
-- `BUDGET_MYSQL_USER`, `BUDGET_MYSQL_PASSWORD`;
-- `BUDGET_MYSQL_ROOT_USER`, `BUDGET_MYSQL_ROOT_PASSWORD`;
-- `BUDGET_DB_CONFIG_DIR`: dossier où écrire/lire `db.env`, par défaut `/app/config`.
-
-### Docker avec MySQL externe
-
-Pour utiliser une base existante:
-
-```bash
-BUDGET_MYSQL_HOST=mysql.example.local \
-BUDGET_MYSQL_DATABASE=budget \
-BUDGET_MYSQL_USER=budget \
-BUDGET_MYSQL_PASSWORD=... \
-docker compose -f build/docker-compose.external-mysql.yml up --build
-```
-
-Dans ce mode, `BUDGET_MYSQL_CREATE_DATABASE` vaut `0` par défaut. Mets-le à `1` seulement si l'utilisateur root est fourni et peut créer la base.
-
-## GitHub Actions
-
-Le workflow `.github/workflows/docker-image.yml` construit et publie l'image Docker sur Docker Hub lors d'un push sur la branche `release`.
-
-Image publiée:
-
-```text
-beegal/budget:latest
-```
-
-Secrets requis:
-
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
-
-## Import Personnal-Budget
-
-Un utilitaire CLI permet de recréer la base et d'importer le classeur `Personnal-Budget`:
+Create an empty database:
 
 ```bash
 python3 budget_cli.py db create
-python3 budget_cli.py workbook import Personnal-Budget.xls --user user@example.com
 ```
 
-Par défaut, la base utilisée est `data/budget.sqlite3`. Pour tester dans une autre base:
+Use another SQLite file:
 
 ```bash
 python3 budget_cli.py --db /tmp/budget-test.sqlite3 db create
 python3 budget_cli.py --db /tmp/budget-test.sqlite3 users create user@example.com
-python3 budget_cli.py --db /tmp/budget-test.sqlite3 workbook import Personnal-Budget.xlsx --user user@example.com
 ```
 
-La commande `db create` recrée une base vide. L'import accepte directement `.xlsx`; si `Personnal-Budget.xls` est demandé mais que `Personnal-Budget.xlsx` existe, le fichier `.xlsx` est utilisé. L'option `--user` cible l'utilisateur de destination par email ou UUID. Si cet utilisateur ne contient que les données initiales vides, elles sont retirées avant l'import.
-
-Les dates de début/fin sont inférées depuis le texte de période visible dans le classeur. Les transactions sont importées même si leur date tombe hors de cette plage; le CLI affiche ces incohérences en `Incohérence importée` sans les filtrer, puis logge séparément les lignes réellement non importables.
-
-La feuille Excel `Budget` est ignorée par le CLI.
-
-Les comptes et intitulés importés sont normalisés en casse titre pour éviter les doublons de saisie (`CASH`, `cash` et `Cash` deviennent `Cash`): première lettre en majuscule, le reste en minuscule.
-
-## Export/import complet
-
-Le CLI peut exporter toute la base dans un classeur `.xlsx` simple, avec un onglet par table et un onglet `_meta`:
+Use a SQLAlchemy URL:
 
 ```bash
-python3 budget_cli.py export full backup-budget.xlsx
+python3 budget_cli.py --database-url sqlite:////tmp/budget-test.sqlite3 db create
+python3 budget_cli.py --database-url mysql+pymysql://budget:pass@127.0.0.1:3306/budget users list
 ```
 
-Pour restaurer cet export dans une base vide:
-
-```bash
-python3 budget_cli.py db create
-python3 budget_cli.py import full backup-budget.xlsx
-```
-
-Les onglets exportés sont:
-
-- `users`
-- `period`
-- `accounts`
-- `transaction_labels`
-- `monthly_budget`
-- `account_balances`
-- `budget_schedule`
-- `transactions`
-
-L'import complet conserve les `id` et les `user_id`, ce qui permet de reconstruire les relations entre utilisateurs, périodes, comptes, soldes, budgets et transactions.
-
-## Migration SQLite vers MySQL
-
-Exemple avec un MySQL Docker de test:
-
-```bash
-eval "$(minikube docker-env)" # seulement si tu utilises le Docker de Minikube
-docker run --name budget-mysql-test \
-  -e MYSQL_ROOT_PASSWORD=rootpass \
-  -e MYSQL_DATABASE=budget_test \
-  -e MYSQL_USER=budget \
-  -e MYSQL_PASSWORD=budgetpass \
-  -p 3307:3306 \
-  -d mysql:8.0
-```
-
-Si Docker est local:
-
-```bash
-export BUDGET_MYSQL_HOST=127.0.0.1
-```
-
-Si Docker pointe vers Minikube:
-
-```bash
-export BUDGET_MYSQL_HOST="$(minikube ip)"
-```
-
-Puis:
-
-```bash
-export BUDGET_MYSQL_PORT=3307
-export BUDGET_MYSQL_DATABASE=budget_test
-export BUDGET_MYSQL_USER=budget
-export BUDGET_MYSQL_PASSWORD=budgetpass
-export BUDGET_MYSQL_ROOT_USER=root
-export BUDGET_MYSQL_ROOT_PASSWORD=rootpass
-
-cp data/budget.sqlite3 /tmp/budget-source.sqlite3
-python3 budget_cli.py --db /tmp/budget-source.sqlite3 export full /tmp/budget-full.xlsx
-python3 budget_cli.py --db-backend mysql db create
-python3 budget_cli.py --db-backend mysql import full /tmp/budget-full.xlsx
-python3 budget_cli.py --db-backend mysql export full /tmp/budget-mysql-check.xlsx
-```
-
-La dernière commande permet de réexporter MySQL et de comparer les onglets avec l'export source si nécessaire.
-
-## Export/import utilisateur
-
-Depuis l'écran `Paramètres`, un utilisateur connecté peut exporter ses propres données dans un `.xlsx`, puis les réimporter plus tard. Cet import remplace uniquement ses données métier; il ne touche pas aux autres utilisateurs ni aux comptes d'authentification.
-
-Le CLI expose la même fonction pour un utilisateur donné, identifié par email ou UUID:
-
-```bash
-python3 budget_cli.py export user user@example.com budget-user.xlsx
-python3 budget_cli.py import user user@example.com budget-user.xlsx
-```
-
-Contrairement à `export full`, cet export ne contient pas la table `users` et ne conserve pas les `user_id`; à l'import, les périodes et comptes sont recréés pour l'utilisateur cible.
-
-## Administration CLI
-
-Le CLI est basé sur Typer et Rich. Il peut administrer les utilisateurs avec une aide moderne et des tables lisibles:
+User administration:
 
 ```bash
 python3 budget_cli.py users list
@@ -520,4 +258,145 @@ python3 budget_cli.py users make-admin user@example.com
 python3 budget_cli.py users revoke-admin user@example.com
 ```
 
-`users list` affiche une table ASCII avec l'UUID, l'email, la dernière connexion, le nombre de comptes, le nombre de transactions, le statut actif/inactif et le rôle admin.
+Full export/import:
+
+```bash
+python3 budget_cli.py export full backup-budget.xlsx
+python3 budget_cli.py db create
+python3 budget_cli.py import full backup-budget.xlsx
+```
+
+User export/import:
+
+```bash
+python3 budget_cli.py export user user@example.com budget-user.xlsx
+python3 budget_cli.py import user user@example.com budget-user.xlsx
+```
+
+Full exports include `users`, `user_profiles`, `profile_seeded` and all business tables. User exports contain only one user's business data and are remapped to the target user on import.
+
+## Docker
+
+Build locally:
+
+```bash
+docker build -f build/Dockerfile -t beegal/budget:local .
+```
+
+With Minikube Docker:
+
+```bash
+eval "$(minikube docker-env)" && docker build -f build/Dockerfile -t beegal/budget:local .
+```
+
+Run:
+
+```bash
+docker run --rm -p 8000:8000 -v "$(pwd)/data:/app/data" beegal/budget:local
+```
+
+The container listens on port `8000` and uses `/app/data` for the default SQLite database.
+
+### Docker With Managed MySQL
+
+```bash
+BUDGET_MYSQL_ROOT_PASSWORD=... \
+BUDGET_MYSQL_PASSWORD=... \
+docker compose -f build/docker-compose.mysql.yml up --build
+```
+
+Volumes:
+
+- `budget-mysql-data`: MySQL data at `/var/lib/mysql`.
+- `budget-db-config`: connection information at `/app/config/db.env`.
+- `budget-app-data`: local app data.
+
+### Docker With External MySQL
+
+```bash
+BUDGET_MYSQL_HOST=mysql.example.local \
+BUDGET_MYSQL_DATABASE=budget \
+BUDGET_MYSQL_USER=budget \
+BUDGET_MYSQL_PASSWORD=... \
+docker compose -f build/docker-compose.external-mysql.yml up --build
+```
+
+## GitHub Actions
+
+`.github/workflows/docker-image.yml` runs tests and Docker builds on pushes to `main`, pushes to `release`, pull requests and manual dispatches.
+
+The workflow:
+
+1. Checks out the repository.
+2. Installs Python dependencies.
+3. Runs Python unit tests.
+4. Runs the Docker/MySQL integration smoke test.
+5. Builds the Docker image.
+6. Pushes the Docker image only when the ref is `refs/heads/release`.
+
+Published image:
+
+```text
+beegal/budget:latest
+beegal/budget:release-<github-run-number>
+```
+
+Required secrets:
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+
+### Run The GitHub Workflow Locally
+
+The helper script uses the same workflow file through `act`:
+
+```bash
+brew install act
+scripts/run-github-workflow-local.sh
+```
+
+By default the script simulates a push to `main`, so it validates tests and Docker setup without logging in to Docker Hub or publishing. It automatically applies Minikube's Docker environment when `minikube` is available.
+
+To run the full workflow and allow the Docker push:
+
+```bash
+DOCKERHUB_USERNAME=... \
+DOCKERHUB_TOKEN=... \
+scripts/run-github-workflow-local.sh --push
+```
+
+`--push` simulates a push to `release`, so the workflow publishes both `latest` and the automatic `release-<github-run-number>` tag.
+
+## Repository Layout
+
+```text
+.
+├── app.py
+├── auth.py
+├── backend_messages.py
+├── budget_cli.py
+├── config.py
+├── config.yaml
+├── database.py
+├── initial-data.yaml
+├── i18n.py
+├── user_preferences.py
+├── web_helpers.py
+├── components/
+├── endpoints/
+├── locales/
+├── scripts/
+├── static/
+│   ├── app.js
+│   ├── icons/
+│   ├── js/
+│   └── style.css
+├── templates/
+│   ├── de/
+│   ├── en/
+│   ├── fr/
+│   └── nl/
+└── tests/
+```
+
+`static/app.js` is only a compatibility pointer. Active frontend code lives in `static/js/`.

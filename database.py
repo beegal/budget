@@ -9,11 +9,33 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    text as sql_text,
+)
+from sqlalchemy.engine import Connection, Engine, URL, make_url
+from sqlalchemy.exc import DBAPIError, IntegrityError as SQLAlchemyIntegrityError, ResourceClosedError
+
+from backend_messages import invalid_mysql_name
 from config import get_language, parse_simple_yaml
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("BUDGET_SQLITE_PATH", str(ROOT / "data" / "budget.sqlite3"))).expanduser()
 INITIAL_DATA_PATH = ROOT / "initial-data.yaml"
+INITIAL_DATA_SEED_KEY = "initial-data"
 LEGACY_USER_ID = "00000000-0000-0000-0000-000000000001"
 USER_SCOPED_TABLES = (
     "period",
@@ -24,6 +46,140 @@ USER_SCOPED_TABLES = (
     "monthly_budget",
     "budget_schedule",
 )
+
+
+metadata = MetaData()
+
+users_table = Table(
+    "users",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("email", String(320), nullable=False, unique=True),
+    Column("hashed_password", String(1024), nullable=False),
+    Column("is_active", Boolean, nullable=False, server_default="1"),
+    Column("is_superuser", Boolean, nullable=False, server_default="0"),
+    Column("is_verified", Boolean, nullable=False, server_default="0"),
+    Column("last_login", String(32)),
+)
+
+Table(
+    "user_profiles",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True),
+    Column("locale", String(64), nullable=False, server_default="fr_FR.UTF-8"),
+    Column("date_format", String(16), nullable=False, server_default="dmy"),
+    Column("number_decimals", Integer, nullable=False, server_default="2"),
+    sqlite_autoincrement=True,
+)
+
+Table(
+    "profile_seeded",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("seed_key", String(64), nullable=False),
+    Column("seeded_at", DateTime, nullable=False, server_default=sql_text("CURRENT_TIMESTAMP")),
+    UniqueConstraint("user_id", "seed_key", name="uniq_profile_seeded_user_key"),
+    sqlite_autoincrement=True,
+)
+
+period_table = Table(
+    "period",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", String(36), nullable=False),
+    Column("name", String(255), nullable=False),
+    Column("start_date", String(10)),
+    Column("end_date", String(10)),
+    UniqueConstraint("user_id", "name", name="uniq_period_user_name"),
+    sqlite_autoincrement=True,
+)
+
+accounts_table = Table(
+    "accounts",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", String(36), nullable=False),
+    Column("name", String(255), nullable=False),
+    Column("sort_index", Integer, nullable=False, server_default="1"),
+    Column("show_in_summary", Integer, nullable=False, server_default="1"),
+    Column("visible_if_empty", Integer, nullable=False, server_default="1"),
+    UniqueConstraint("user_id", "name", name="uniq_accounts_user_name"),
+    sqlite_autoincrement=True,
+)
+
+Table(
+    "transaction_labels",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", String(36), nullable=False),
+    Column("name", String(255), nullable=False),
+    UniqueConstraint("user_id", "name", name="uniq_labels_user_name"),
+    sqlite_autoincrement=True,
+)
+
+transactions_table = Table(
+    "transactions",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", String(36), nullable=False),
+    Column("period_id", Integer, ForeignKey("period.id", ondelete="CASCADE"), nullable=False),
+    Column("account_id", Integer, ForeignKey("accounts.id"), nullable=False),
+    Column("date", String(10)),
+    Column("label", String(255), nullable=False),
+    Column("amount", Float, nullable=False, server_default="0"),
+    Column("sort_index", Integer, nullable=False, server_default="1"),
+    Column("comment", Text),
+    Column("created_at", DateTime, nullable=False, server_default=sql_text("CURRENT_TIMESTAMP")),
+    Column("updated_at", DateTime, nullable=False, server_default=sql_text("CURRENT_TIMESTAMP")),
+    sqlite_autoincrement=True,
+)
+
+Table(
+    "account_balances",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", String(36), nullable=False),
+    Column("period_id", Integer, ForeignKey("period.id", ondelete="CASCADE"), nullable=False),
+    Column("account_id", Integer, ForeignKey("accounts.id"), nullable=False),
+    Column("opening", Float),
+    UniqueConstraint("user_id", "period_id", "account_id", name="uniq_account_balances_user_period_account"),
+    sqlite_autoincrement=True,
+)
+
+Table(
+    "monthly_budget",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", String(36), nullable=False),
+    Column("day", Integer, nullable=False),
+    Column("label", String(255), nullable=False),
+    Column("amount", Float, nullable=False, server_default="0"),
+    CheckConstraint("day BETWEEN 1 AND 31", name="check_monthly_budget_day"),
+    sqlite_autoincrement=True,
+)
+
+budget_schedule_table = Table(
+    "budget_schedule",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", String(36), nullable=False),
+    Column("period_id", Integer, ForeignKey("period.id", ondelete="CASCADE"), nullable=False),
+    Column("label", String(255), nullable=False),
+    Column("amount", Float, nullable=False, server_default="0"),
+    Column("status", String(20), nullable=False, server_default="scheduled"),
+    CheckConstraint("status IN ('scheduled', 'found', 'cancel')", name="check_budget_schedule_status"),
+    sqlite_autoincrement=True,
+)
+
+Index("idx_transactions_period", transactions_table.c.period_id)
+Index("idx_transactions_account", transactions_table.c.account_id)
+Index("idx_transactions_date", transactions_table.c.date)
+Index("idx_transactions_user", transactions_table.c.user_id)
+Index("idx_budget_schedule_period", budget_schedule_table.c.period_id)
+Index("idx_budget_schedule_match", budget_schedule_table.c.period_id, budget_schedule_table.c.label, budget_schedule_table.c.amount, budget_schedule_table.c.status)
+Index("idx_budget_schedule_user", budget_schedule_table.c.user_id)
 
 
 class DictRow(dict):
@@ -57,29 +213,42 @@ class ResultCursor:
         return rows
 
 
-class MySQLCursor:
-    def __init__(self, cursor: Any):
-        self._cursor = cursor
-        self.rowcount = cursor.rowcount
-        self.lastrowid = cursor.lastrowid
-        self._columns = [column[0] for column in cursor.description or []]
+class SQLAlchemyCursor:
+    def __init__(self, result: Any):
+        self._result = result
+        self.rowcount = result.rowcount
+        self.lastrowid = getattr(result, "lastrowid", None)
+        self._columns = list(result.keys()) if result.returns_rows else []
 
     def fetchone(self) -> DictRow | None:
-        row = self._cursor.fetchone()
-        return DictRow(row, self._columns) if row is not None else None
+        try:
+            row = self._result.fetchone()
+        except ResourceClosedError:
+            return None
+        return self._dict_row(row) if row is not None else None
 
     def fetchall(self) -> list[DictRow]:
-        return [DictRow(row, self._columns) for row in self._cursor.fetchall()]
+        try:
+            rows = self._result.fetchall()
+        except ResourceClosedError:
+            return []
+        return [self._dict_row(row) for row in rows]
+
+    def _dict_row(self, row: Any) -> DictRow:
+        columns = self._columns or list(row._mapping.keys())
+        values = {column: row._mapping[column] for column in columns}
+        return DictRow(values, columns)
 
 
-class MySQLConnection:
-    backend = "mysql"
-
-    def __init__(self, conn: Any):
-        self._conn = conn
+class SQLAlchemyConnection:
+    def __init__(self, engine: Engine):
+        self._engine = engine
+        self._conn: Connection = engine.connect()
         self._lastrowid = 0
+        self.backend = engine.dialect.name
+        self.paramstyle = engine.dialect.paramstyle
 
-    def __enter__(self) -> "MySQLConnection":
+    def __enter__(self) -> "SQLAlchemyConnection":
         return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
@@ -89,33 +258,39 @@ class MySQLConnection:
             self.rollback()
         self.close()
 
-    def execute(self, sql: str, parameters: tuple[object, ...] | list[object] = ()) -> MySQLCursor | ResultCursor:
+    def execute(self, sql: str, parameters: tuple[object, ...] | list[object] = ()) -> SQLAlchemyCursor | ResultCursor:
         normalized = sql.strip()
-        if normalized.upper().startswith("PRAGMA "):
+        if normalized.upper().startswith("PRAGMA ") and self.backend != "sqlite":
             return ResultCursor([], [])
         if normalized.upper() == "SELECT LAST_INSERT_ROWID()":
             return ResultCursor([(self._lastrowid,)], ["last_insert_rowid()"])
-        if normalized.upper().startswith("DELETE FROM SQLITE_SEQUENCE"):
+        if normalized.upper().startswith("DELETE FROM SQLITE_SEQUENCE") and self.backend != "sqlite":
             return ResultCursor([], [])
-        cursor = self._conn.cursor()
+        converted_sql = driver_sql(sql, self.backend, self.paramstyle)
         try:
-            cursor.execute(mysql_sql(sql), tuple(parameters))
-        except Exception as error:
-            if getattr(error, "args", [None])[0] in (1060, 1061):
+            result = self._conn.exec_driver_sql(converted_sql, tuple(parameters))
+        except DBAPIError as error:
+            if ignorable_database_error(error):
                 return ResultCursor([], [])
             raise
-        self._lastrowid = cursor.lastrowid or self._lastrowid
-        return MySQLCursor(cursor)
+        self._lastrowid = getattr(result, "lastrowid", None) or self._lastrowid
+        return SQLAlchemyCursor(result)
 
-    def executemany(self, sql: str, parameters: list[tuple[object, ...]]) -> MySQLCursor:
-        cursor = self._conn.cursor()
-        cursor.executemany(mysql_sql(sql), parameters)
-        self._lastrowid = cursor.lastrowid or self._lastrowid
-        return MySQLCursor(cursor)
+    def executemany(self, sql: str, parameters: list[tuple[object, ...]]) -> SQLAlchemyCursor:
+        result = self._conn.exec_driver_sql(driver_sql(sql, self.backend, self.paramstyle), parameters)
+        self._lastrowid = getattr(result, "lastrowid", None) or self._lastrowid
+        return SQLAlchemyCursor(result)
 
     def executescript(self, sql: str) -> None:
-        for statement in mysql_schema_statements():
+        if self.backend == "mysql":
+            for statement in mysql_schema_statements():
+                self.execute(statement)
+            return
+        for statement in split_sql_script(sql):
             self.execute(statement)
+
+    def create_all(self) -> None:
+        metadata.create_all(self._conn)
 
     def commit(self) -> None:
         self._conn.commit()
@@ -125,27 +300,73 @@ class MySQLConnection:
 
     def close(self) -> None:
         self._conn.close()
+        self._engine.dispose()
 
 
-def db() -> sqlite3.Connection | MySQLConnection:
-    if database_backend() == "mysql":
-        conn = mysql_connect()
-        ensure_schema(conn)
-        return conn
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+MySQLConnection = SQLAlchemyConnection
+
+
+def db() -> SQLAlchemyConnection:
+    conn = connect()
     ensure_schema(conn)
     return conn
 
 
 def database_backend() -> str:
+    explicit_url = os.environ.get("BUDGET_DATABASE_URL")
+    if explicit_url:
+        return make_url(explicit_url).get_backend_name()
     return os.environ.get("BUDGET_DB_BACKEND", "sqlite").strip().lower()
 
 
+def database_url(database_name: str | None = None, admin: bool = False, async_driver: bool = False) -> str:
+    explicit_url = os.environ.get("BUDGET_DATABASE_URL")
+    if explicit_url and not admin and database_name is None:
+        return adapt_database_url(explicit_url, async_driver)
+    backend = os.environ.get("BUDGET_DB_BACKEND", "sqlite").strip().lower()
+    if backend == "mysql":
+        user = os.environ.get("BUDGET_MYSQL_ROOT_USER" if admin else "BUDGET_MYSQL_USER", "root" if admin else "budget")
+        password = os.environ.get("BUDGET_MYSQL_ROOT_PASSWORD" if admin else "BUDGET_MYSQL_PASSWORD", "")
+        driver = "mysql+aiomysql" if async_driver else "mysql+pymysql"
+        return (
+            URL.create(
+                driver,
+                username=user,
+                password=password,
+                host=os.environ.get("BUDGET_MYSQL_HOST", "127.0.0.1"),
+                port=int(os.environ.get("BUDGET_MYSQL_PORT", "3306")),
+                database=None if admin else database_name or os.environ.get("BUDGET_MYSQL_DATABASE", "budget"),
+            )
+            .render_as_string(hide_password=False)
+        )
+    driver = "sqlite+aiosqlite" if async_driver else "sqlite"
+    return f"{driver}:///{DB_PATH}"
+
+
+def adapt_database_url(url: str, async_driver: bool = False) -> str:
+    parsed = make_url(url)
+    backend = parsed.get_backend_name()
+    if backend == "sqlite":
+        driver = "sqlite+aiosqlite" if async_driver else "sqlite"
+    elif backend == "mysql":
+        driver = "mysql+aiomysql" if async_driver else "mysql+pymysql"
+    else:
+        driver = parsed.drivername
+    return parsed.set(drivername=driver).render_as_string(hide_password=False)
+
+
+def connect(database_name: str | None = None, admin: bool = False) -> SQLAlchemyConnection:
+    if database_backend() == "sqlite":
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    engine = create_engine(database_url(database_name, admin), future=True)
+    conn = SQLAlchemyConnection(engine)
+    if conn.backend == "sqlite":
+        conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
 def integrity_errors() -> tuple[type[BaseException], ...]:
-    errors: list[type[BaseException]] = [sqlite3.IntegrityError]
+    errors: list[type[BaseException]] = [sqlite3.IntegrityError, SQLAlchemyIntegrityError]
     try:
         import pymysql
 
@@ -155,45 +376,12 @@ def integrity_errors() -> tuple[type[BaseException], ...]:
     return tuple(errors)
 
 
-def mysql_connect(database_name: str | None = None) -> MySQLConnection:
-    try:
-        import pymysql
-        from pymysql.cursors import DictCursor
-    except ImportError as error:
-        raise RuntimeError("Le backend MySQL demande la dépendance PyMySQL.") from error
-
-    return MySQLConnection(
-        pymysql.connect(
-            host=os.environ.get("BUDGET_MYSQL_HOST", "127.0.0.1"),
-            port=int(os.environ.get("BUDGET_MYSQL_PORT", "3306")),
-            user=os.environ.get("BUDGET_MYSQL_USER", "budget"),
-            password=os.environ.get("BUDGET_MYSQL_PASSWORD", ""),
-            database=database_name or os.environ.get("BUDGET_MYSQL_DATABASE", "budget"),
-            charset="utf8mb4",
-            cursorclass=DictCursor,
-            autocommit=False,
-        )
-    )
+def mysql_connect(database_name: str | None = None) -> SQLAlchemyConnection:
+    return connect(database_name)
 
 
-def mysql_admin_connect() -> MySQLConnection:
-    try:
-        import pymysql
-        from pymysql.cursors import DictCursor
-    except ImportError as error:
-        raise RuntimeError("Le backend MySQL demande la dépendance PyMySQL.") from error
-
-    return MySQLConnection(
-        pymysql.connect(
-            host=os.environ.get("BUDGET_MYSQL_HOST", "127.0.0.1"),
-            port=int(os.environ.get("BUDGET_MYSQL_PORT", "3306")),
-            user=os.environ.get("BUDGET_MYSQL_ROOT_USER", "root"),
-            password=os.environ.get("BUDGET_MYSQL_ROOT_PASSWORD", ""),
-            charset="utf8mb4",
-            cursorclass=DictCursor,
-            autocommit=False,
-        )
-    )
+def mysql_admin_connect() -> SQLAlchemyConnection:
+    return connect(admin=True)
 
 
 def create_mysql_database() -> None:
@@ -212,8 +400,19 @@ def create_mysql_database() -> None:
 def mysql_identifier(value: str, label: str) -> str:
     value = str(value or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_]+", value):
-        raise ValueError(f"Nom MySQL invalide pour {label}: {value}")
+        raise ValueError(invalid_mysql_name(label, value))
     return value
+
+
+def driver_sql(sql: str, backend: str, paramstyle: str) -> str:
+    if backend == "mysql":
+        return mysql_sql(sql)
+    converted = sql
+    if backend == "postgresql":
+        converted = postgres_sql(converted)
+    if paramstyle in {"format", "pyformat"}:
+        converted = converted.replace("?", "%s")
+    return converted
 
 
 def mysql_sql(sql: str) -> str:
@@ -224,6 +423,35 @@ def mysql_sql(sql: str) -> str:
         "ON DUPLICATE KEY UPDATE opening = VALUES(opening)",
     )
     return converted
+
+
+def postgres_sql(sql: str) -> str:
+    converted = re.sub(
+        r"INSERT\s+OR\s+IGNORE\s+INTO\s+([^\s(]+)\s*(\([^)]*\))\s*VALUES\s*(\([^)]*\))",
+        r"INSERT INTO \1 \2 VALUES \3 ON CONFLICT DO NOTHING",
+        sql,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return converted
+
+
+def split_sql_script(sql: str) -> list[str]:
+    return [statement.strip() for statement in sql.split(";") if statement.strip()]
+
+
+def ignorable_database_error(error: DBAPIError) -> bool:
+    original = getattr(error, "orig", error)
+    args = getattr(original, "args", ())
+    code = args[0] if args else getattr(original, "pgcode", None)
+    message = str(original).lower()
+    return code in (1060, 1061, "42701", "42P07") or "duplicate column" in message or "already exists" in message
+
+
+def create_core_schema(conn: sqlite3.Connection | SQLAlchemyConnection) -> None:
+    if isinstance(conn, SQLAlchemyConnection):
+        conn.create_all()
+    else:
+        conn.executescript(sqlite_schema())
 
 
 def mysql_schema_statements() -> list[str]:
@@ -347,16 +575,23 @@ def mysql_schema_statements() -> list[str]:
     ]
 
 
-def ensure_schema(conn: sqlite3.Connection | MySQLConnection) -> None:
-    if not isinstance(conn, MySQLConnection):
-        if sqlite_needs_multi_user_migration(conn):
-            migrate_sqlite_multi_user(conn)
+def ensure_schema(conn: sqlite3.Connection | SQLAlchemyConnection) -> None:
+    if isinstance(conn, SQLAlchemyConnection):
+        if conn.backend == "sqlite":
+            if sqlite_needs_multi_user_migration(conn):
+                migrate_sqlite_multi_user(conn)
+            else:
+                create_core_schema(conn)
+            ensure_sqlite_user_columns(conn)
         else:
-            conn.executescript(sqlite_schema())
+            create_core_schema(conn)
+            conn.execute("ALTER TABLE users ADD COLUMN last_login VARCHAR(32)")
+    elif sqlite_needs_multi_user_migration(conn):
+        migrate_sqlite_multi_user(conn)
         ensure_sqlite_user_columns(conn)
     else:
         conn.executescript(sqlite_schema())
-        conn.execute("ALTER TABLE users ADD COLUMN last_login VARCHAR(32)")
+        ensure_sqlite_user_columns(conn)
     conn.execute(
         """
         INSERT OR IGNORE INTO transaction_labels(user_id, name)
@@ -593,13 +828,20 @@ def adopt_legacy_data(conn: sqlite3.Connection | MySQLConnection, user_id: str) 
 
 
 def ensure_user_data(conn: sqlite3.Connection | MySQLConnection, user_id: str, language_id: str | None = None) -> None:
-    if profile_seed_done(conn, user_id, "initial-data"):
+    if profile_seed_done(conn, user_id, INITIAL_DATA_SEED_KEY):
         return
     seed_empty_database(conn, user_id, language_id)
-    mark_profile_seed_done(conn, user_id, "initial-data")
+    mark_profile_seed_done(conn, user_id, INITIAL_DATA_SEED_KEY)
 
 
 def profile_seed_done(conn: sqlite3.Connection | MySQLConnection, user_id: str, seed_key: str) -> bool:
+    """Return whether a one-shot user profile seed already ran.
+
+    `profile_seeded` is intentionally separate from user preferences: it records
+    irreversible bootstrap jobs per user. Today the only seed key is
+    `initial-data`, used to create the default accounts, labels, budget and first
+    period at first login.
+    """
     row = conn.execute(
         "SELECT 1 FROM profile_seeded WHERE user_id = ? AND seed_key = ?",
         (user_id, seed_key),

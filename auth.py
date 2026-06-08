@@ -45,14 +45,7 @@ class UserUpdate(schemas.BaseUserUpdate):
 
 
 def auth_database_url() -> str:
-    if database.database_backend() == "mysql":
-        user = os.environ.get("BUDGET_MYSQL_USER", "budget")
-        password = os.environ.get("BUDGET_MYSQL_PASSWORD", "")
-        host = os.environ.get("BUDGET_MYSQL_HOST", "127.0.0.1")
-        port = os.environ.get("BUDGET_MYSQL_PORT", "3306")
-        name = os.environ.get("BUDGET_MYSQL_DATABASE", "budget")
-        return f"mysql+aiomysql://{user}:{password}@{host}:{port}/{name}"
-    return f"sqlite+aiosqlite:///{database.DB_PATH}"
+    return database.database_url(async_driver=True)
 
 
 engine = create_async_engine(auth_database_url())
