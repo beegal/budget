@@ -103,11 +103,26 @@ async function submitAuthForm(form, mode) {
 }
 
 function parseDisplayNumber(value) {
-  const { group, decimal } = numberSeparators();
-  let normalized = String(value || "").trim().replace(/\s/g, "");
-  if (group && group !== " ") normalized = normalized.split(group).join("");
-  if (decimal && decimal !== ".") normalized = normalized.split(decimal).join(".");
-  return Number(normalized);
+  let normalized = String(value || "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/EUR|eur|euro/gi, "");
+  if (!normalized) return 0;
+  const lastComma = normalized.lastIndexOf(",");
+  const lastDot = normalized.lastIndexOf(".");
+  const decimalIndex = Math.max(lastComma, lastDot);
+  if (decimalIndex >= 0) {
+    const separator = normalized[decimalIndex];
+    const fractionLength = normalized.length - decimalIndex - 1;
+    const looksLikeDecimal = fractionLength > 0 && fractionLength <= numberDecimals();
+    if (looksLikeDecimal) {
+      const integerPart = normalized.slice(0, decimalIndex).replace(/[,.]/g, "");
+      const fractionPart = normalized.slice(decimalIndex + 1).replace(/[,.]/g, "");
+      return Number(`${integerPart}.${fractionPart}`);
+    }
+    normalized = normalized.split(separator).join("");
+  }
+  return Number(normalized.replace(/[,.]/g, ""));
 }
 
 function formatDisplayNumber(value, decimals = 2) {
@@ -153,5 +168,4 @@ function updateTransactionRunningBalances(table) {
       : `${tr("js.current-balance")} : ${tr("period.unknown")} - ${tr("js.total-operations")} : ${formatDisplayMoney(operationsTotal, decimals)}`;
   }
 }
-
 
