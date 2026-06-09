@@ -37,7 +37,7 @@ DB_PATH = Path(os.environ.get("BUDGET_SQLITE_PATH", str(ROOT / "data" / "budget.
 INITIAL_DATA_PATH = ROOT / "initial-data.yaml"
 INITIAL_DATA_SEED_KEY = "initial-data"
 MIGRATIONS_DIR = ROOT / "migrations"
-LATEST_SCHEMA_VERSION = 1
+LATEST_SCHEMA_VERSION = 2
 MIGRATION_FILENAME_RE = re.compile(r"^migration_(\d+)_(\d+)\.sql$")
 LEGACY_USER_ID = "00000000-0000-0000-0000-000000000001"
 USER_SCOPED_TABLES = (
@@ -63,6 +63,7 @@ users_table = Table(
     Column("is_superuser", Boolean, nullable=False, server_default="0"),
     Column("is_verified", Boolean, nullable=False, server_default="0"),
     Column("last_login", String(32)),
+    Column("created_at", String(32), server_default=sql_text("CURRENT_TIMESTAMP")),
 )
 
 Table(
@@ -467,7 +468,8 @@ def mysql_schema_statements() -> list[str]:
             is_active BOOL NOT NULL DEFAULT TRUE,
             is_superuser BOOL NOT NULL DEFAULT FALSE,
             is_verified BOOL NOT NULL DEFAULT FALSE,
-            last_login VARCHAR(32)
+            last_login VARCHAR(32),
+            created_at VARCHAR(32) DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
@@ -615,7 +617,8 @@ def sqlite_schema() -> str:
             is_active BOOLEAN NOT NULL DEFAULT 1,
             is_superuser BOOLEAN NOT NULL DEFAULT 0,
             is_verified BOOLEAN NOT NULL DEFAULT 0,
-            last_login TEXT
+            last_login TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS user_profiles (

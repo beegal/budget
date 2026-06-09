@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import contextmanager
 from datetime import datetime
@@ -8,7 +9,7 @@ from typing import Iterator
 from urllib.parse import parse_qs, quote
 from zipfile import BadZipFile
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 import auth
@@ -17,6 +18,7 @@ import database
 from database import db
 from endpoints import admin, api, imports, parameters, period, periods, profile, static_files, summary, transactions
 from i18n import preferred_language, translate, use_language
+from security import max_upload_bytes, only_https, validate_same_origin
 from user_preferences import ensure_user_preferences, use_preferences
 from version import APP_VERSION, current_commit_id
 
@@ -33,6 +35,36 @@ application.include_router(
     prefix="/auth",
     tags=["auth"],
 )
+
+
+@application.middleware("http")
+async def security_middleware(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_upload_bytes():
+                return Response("Payload too large", status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+        except ValueError:
+            return Response("Invalid Content-Length", status_code=HTTPStatus.BAD_REQUEST)
+    try:
+        validate_same_origin(request)
+    except HTTPException as error:
+        status_code = getattr(error, "status_code", HTTPStatus.FORBIDDEN)
+        detail = getattr(error, "detail", "Forbidden")
+        return Response(str(detail), status_code=status_code)
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    )
+    if only_https():
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 
 @application.on_event("startup")
@@ -134,7 +166,9 @@ async def parameters_import(request: Request, user: auth.User = Depends(auth.cur
     if upload is None or not hasattr(upload, "read"):
         return Response("Fichier d'import manquant.", status_code=HTTPStatus.BAD_REQUEST)
     try:
-        data = await upload.read()
+        data = await upload.read(max_upload_bytes() + 1)
+        if len(data) > max_upload_bytes():
+            return Response("Fichier trop volumineux.", status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
         with db() as conn:
             budget_cli.import_user_database_bytes(conn, data, user_id(user))
     except (BadZipFile, KeyError, ValueError) as error:
@@ -319,14 +353,21 @@ def render_public_page(template_name: str, request: Request | None = None) -> by
 
 
 async def form_data(request: Request) -> dict[str, list[str]]:
-    return parse_qs((await request.body()).decode("utf-8"))
+    return parse_qs((await limited_body(request)).decode("utf-8"))
 
 
 async def json_data(request: Request) -> dict[str, object]:
-    data = await request.body()
+    data = await limited_body(request)
     if not data:
         return {}
-    return await request.json()
+    return json.loads(data)
+
+
+async def limited_body(request: Request) -> bytes:
+    data = await request.body()
+    if len(data) > max_upload_bytes():
+        raise HTTPException(status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE, detail="Payload too large")
+    return data
 
 
 def run(host: str = "127.0.0.1", port: int = 8000) -> None:

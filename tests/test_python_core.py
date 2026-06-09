@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import database
+import security
 from endpoints.api import ensure_transaction_label, sync_internal_transfer
 from i18n import frontend_messages, preferred_language, translate, use_language
 from transfer_labels import is_internal_transfer_label, is_internal_transfer_group
@@ -143,6 +144,8 @@ class SchemaMigrationTests(unittest.TestCase):
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()}
         self.assertIn("transfer_pair_id", columns)
         self.assertIn("transfer_auto", columns)
+        user_columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        self.assertIn("created_at", user_columns)
 
     def test_migrations_are_idempotent(self) -> None:
         conn = sqlite3.connect(":memory:")
@@ -170,6 +173,24 @@ class SchemaMigrationTests(unittest.TestCase):
         database.ensure_schema(conn)
 
         self.assertEqual(database.schema_version(conn), database.LATEST_SCHEMA_VERSION)
+
+
+class SecurityConfigurationTests(unittest.TestCase):
+    def test_security_limits_use_environment_overrides(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "BUDGET_ONLY_HTTPS": "1",
+                "BUDGET_MAX_UPLOAD": "1234",
+                "BUDGET_MAX_ACCOUNT": "7",
+                "BUDGET_MAX_DAILY_NEW_ACCOUNT": "2",
+            },
+            clear=False,
+        ):
+            self.assertTrue(security.only_https())
+            self.assertEqual(security.max_upload_bytes(), 1234)
+            self.assertEqual(security.max_accounts(), 7)
+            self.assertEqual(security.max_daily_new_accounts(), 2)
 
 
 class DatabaseConfigurationTests(unittest.TestCase):

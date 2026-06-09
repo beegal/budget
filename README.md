@@ -169,12 +169,18 @@ Authentication settings:
 
 ```bash
 BUDGET_AUTH_SECRET=change-me
+BUDGET_ONLY_HTTPS=0
 BUDGET_AUTH_COOKIE_MAX_AGE=2592000
 BUDGET_AUTH_COOKIE_SECURE=0
 BUDGET_AUTH_LIFETIME=2592000
+BUDGET_MAX_UPLOAD=5242880
+BUDGET_MAX_ACCOUNT=25
+BUDGET_MAX_DAILY_NEW_ACCOUNT=5
 ```
 
-In production, `BUDGET_AUTH_SECRET` must be long and private. Set `BUDGET_AUTH_COOKIE_SECURE=1` behind HTTPS. If no auth secret is configured, the application generates a non-predictable secret at startup, which is safer than a hardcoded default but invalidates existing sessions on restart.
+In production, `BUDGET_AUTH_SECRET` must be long and private. Set `BUDGET_ONLY_HTTPS=1` behind HTTPS; this enables HSTS and makes auth cookies secure by default. `BUDGET_AUTH_COOKIE_SECURE` can still override the cookie flag explicitly. If no auth secret is configured, the application generates a non-predictable secret at startup, which is safer than a hardcoded default but invalidates existing sessions on restart.
+
+`BUDGET_MAX_UPLOAD` limits request bodies and user import files in bytes. `BUDGET_MAX_ACCOUNT` and `BUDGET_MAX_DAILY_NEW_ACCOUNT` limit public registration.
 
 To create a MySQL database and user with the CLI:
 

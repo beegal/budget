@@ -19,6 +19,7 @@ from rich.table import Table
 import typer
 
 import database
+from security import max_upload_bytes
 from user_preferences import ensure_user_preferences
 
 
@@ -43,9 +44,9 @@ app.add_typer(import_app, name="import")
 app.add_typer(users_app, name="users")
 XLSX_NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 REL_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
-FULL_EXPORT_VERSION = "4"
+FULL_EXPORT_VERSION = "5"
 FULL_EXPORT_TABLES = [
-    ("users", ["id", "email", "hashed_password", "is_active", "is_superuser", "is_verified", "last_login"]),
+    ("users", ["id", "email", "hashed_password", "is_active", "is_superuser", "is_verified", "last_login", "created_at"]),
     ("user_profiles", ["id", "user_id", "locale", "date_format", "number_decimals"]),
     ("profile_seeded", ["id", "user_id", "seed_key", "seeded_at"]),
     ("period", ["id", "user_id", "name", "start_date", "end_date"]),
@@ -115,6 +116,7 @@ INTEGER_COLUMNS = {
 }
 FLOAT_COLUMNS = {"amount", "opening"}
 OPTIONAL_IMPORT_DEFAULTS = {
+    "created_at": "",
     "transfer_pair_id": "",
     "transfer_auto": "0",
 }
@@ -480,7 +482,9 @@ def import_user_database_bytes(
     data: bytes,
     user_id: str,
 ) -> dict[str, int]:
+    validate_upload_size(len(data))
     with ZipFile(BytesIO(data)) as archive:
+        validate_xlsx_archive_limits(archive)
         # Reuse the normal reader by writing through the same XML helpers on an in-memory archive.
         shared_strings = read_shared_strings(archive)
         workbook = ET.fromstring(archive.read("xl/workbook.xml"))
@@ -809,7 +813,7 @@ def validate_full_import(sheets: dict[str, WorkbookSheet]) -> None:
     meta_values = {str(row.get("key") or ""): str(row.get("value") or "") for row in meta}
     if meta_values.get("format") != "budget-full-export":
         raise ValueError("Le classeur n'est pas un export complet Budget.")
-    if meta_values.get("version") not in {"2", "3", FULL_EXPORT_VERSION}:
+    if meta_values.get("version") not in {"2", "3", "4", FULL_EXPORT_VERSION}:
         raise ValueError(f"Version d'export non supportée: {meta_values.get('version') or '-'}")
 
 
@@ -967,7 +971,9 @@ def resolve_xlsx_path(path: Path) -> Path:
 
 
 def read_xlsx(path: Path) -> list[WorkbookSheet]:
+    validate_upload_size(path.stat().st_size)
     with ZipFile(path) as archive:
+        validate_xlsx_archive_limits(archive)
         shared_strings = read_shared_strings(archive)
         workbook = ET.fromstring(archive.read("xl/workbook.xml"))
         rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
@@ -1005,6 +1011,25 @@ def read_sheet_rows(archive: ZipFile, target: str, shared_strings: list[str]) ->
         if values:
             rows[row_number] = values
     return rows
+
+
+def validate_upload_size(size: int) -> None:
+    if size > max_upload_bytes():
+        raise ValueError("Import file is too large.")
+
+
+def validate_xlsx_archive_limits(archive: ZipFile) -> None:
+    infos = archive.infolist()
+    if len(infos) > 200:
+        raise ValueError("Import workbook contains too many files.")
+    max_size = max_upload_bytes()
+    total_size = 0
+    for info in infos:
+        total_size += info.file_size
+        if info.file_size > max_size:
+            raise ValueError("Import workbook contains a file that is too large.")
+    if total_size > max_size * 5:
+        raise ValueError("Import workbook is too large after decompression.")
 
 
 def cell_value(cell: ET.Element, shared_strings: list[str]) -> str:
