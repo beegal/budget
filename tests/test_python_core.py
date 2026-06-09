@@ -119,6 +119,18 @@ class InternalTransferTests(unittest.TestCase):
         labels = conn.execute("SELECT name FROM transaction_labels ORDER BY name").fetchall()
         self.assertEqual([row["name"] for row in labels], ["Courses"])
 
+    def test_internal_transfer_labels_are_seeded_for_accounts_on_startup(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(database.sqlite_schema())
+        conn.execute("INSERT INTO accounts(user_id, name, sort_index) VALUES (?, ?, ?)", ("user-1", "Cash", 1))
+        conn.execute("INSERT INTO accounts(user_id, name, sort_index) VALUES (?, ?, ?)", ("user-1", "Savings", 2))
+
+        database.ensure_schema(conn)
+
+        labels = conn.execute("SELECT name FROM transaction_labels ORDER BY name").fetchall()
+        self.assertEqual([row["name"] for row in labels], ["Virement Interne - Cash", "Virement Interne - Savings"])
+
 
 class SchemaMigrationTests(unittest.TestCase):
     def test_new_sqlite_database_runs_migrations_to_latest_version(self) -> None:

@@ -29,7 +29,6 @@ def page(period_id: int, query: str, user_id: str) -> bytes:
         ).fetchall()
         accounts = period_accounts(conn, period_id, user_id)
         labels = conn.execute("SELECT id, name FROM transaction_labels WHERE user_id = ? ORDER BY name", (user_id,)).fetchall()
-        labels = [row for row in labels if not is_internal_transfer_label(row["name"])]
         summary_rows = period_summary_rows(conn, period_id, user_id)
         balance_rows = period_balance_rows(conn, period_id, user_id)
         transfer_rows = period_transfer_rows(conn, period_id, user_id)

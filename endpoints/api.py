@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from database import db, integrity_errors
+from database import db, ensure_internal_transfer_labels, integrity_errors
 from i18n import translate
 from transfer_labels import (
     internal_transfer_mirror_label,
@@ -766,6 +766,8 @@ def save_named_row(table: str, payload: dict[str, object], user_id: str) -> dict
                 conn.execute(f"INSERT INTO {table}(user_id, name) VALUES (?, ?)", (user_id, name))
             saved_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             rows = account_indexes(conn, user_id) if table == "accounts" else []
+        if table == "accounts":
+            ensure_internal_transfer_labels(conn, user_id)
     return {"id": saved_id, "value": name, "rows": rows}
 
 
@@ -926,6 +928,8 @@ def merge_account(payload: dict[str, object], user_id: str) -> dict[str, object]
 def update_simple(table: str, payload: dict[str, object], user_id: str) -> None:
     with db() as conn:
         conn.execute(f"UPDATE {table} SET name = ? WHERE id = ? AND user_id = ?", (str(payload.get("value") or "").strip(), int(payload["id"]), user_id))
+        if table == "accounts":
+            ensure_internal_transfer_labels(conn, user_id)
 
 
 def update_label(payload: dict[str, object], user_id: str) -> None:

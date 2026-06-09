@@ -602,6 +602,7 @@ def ensure_schema(conn: sqlite3.Connection | SQLAlchemyConnection) -> None:
         SELECT DISTINCT user_id, label FROM transactions WHERE label IS NOT NULL AND TRIM(label) <> ''
         """
     )
+    ensure_internal_transfer_labels(conn)
     conn.commit()
 
 
@@ -1044,6 +1045,27 @@ def seed_empty_database(conn: sqlite3.Connection | MySQLConnection, user_id: str
         if is_internal_transfer_label(label):
             continue
         conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label))
+    ensure_internal_transfer_labels(conn, user_id)
+
+
+def ensure_internal_transfer_labels(conn: sqlite3.Connection | MySQLConnection, user_id: str | None = None) -> None:
+    from transfer_labels import internal_transfer_label_for_account
+
+    if user_id:
+        accounts = conn.execute(
+            "SELECT user_id, name FROM accounts WHERE user_id = ? ORDER BY name",
+            (user_id,),
+        ).fetchall()
+    else:
+        accounts = conn.execute("SELECT user_id, name FROM accounts ORDER BY user_id, name").fetchall()
+    for account in accounts:
+        label = internal_transfer_label_for_account(account["name"])
+        if label.endswith(" - "):
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)",
+            (account["user_id"], label),
+        )
 
 
 def load_initial_data() -> dict[str, Any]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from components.parameters import account_row, empty_monthly_budget_row, monthly_budget_row, settings_row
-from database import db
+from database import db, ensure_internal_transfer_labels
 from i18n import translate
 from transfer_labels import is_internal_transfer_label
 from web_helpers import one, render_template, user_layout
@@ -66,6 +66,7 @@ def page(user_id: str) -> bytes:
 def create_account(data: dict[str, list[str]], user_id: str) -> str:
     with db() as conn:
         conn.execute("INSERT OR IGNORE INTO accounts(user_id, name) VALUES (?, ?)", (user_id, one(data, "name")))
+        ensure_internal_transfer_labels(conn, user_id)
     return "/parameters"
 
 

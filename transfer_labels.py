@@ -14,6 +14,7 @@ INTERNAL_TRANSFER_GROUPS = {
     "transfert interne",
     "transferts internes",
 }
+DEFAULT_INTERNAL_TRANSFER_GROUP = "Virement Interne"
 
 
 def normalized_text(value: object) -> str:
@@ -51,3 +52,7 @@ def internal_transfer_target_name(label: object) -> str:
 def internal_transfer_mirror_label(label: object, source_account_name: str) -> str:
     group = label_group(label)
     return f"{group} - {source_account_name}"
+
+
+def internal_transfer_label_for_account(account_name: object) -> str:
+    return f"{DEFAULT_INTERNAL_TRANSFER_GROUP} - {str(account_name or '').strip()}"
