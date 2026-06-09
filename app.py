@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from datetime import datetime
 from http import HTTPStatus
@@ -17,8 +18,10 @@ from database import db
 from endpoints import admin, api, imports, parameters, period, periods, profile, static_files, summary, transactions
 from i18n import preferred_language, translate, use_language
 from user_preferences import ensure_user_preferences, use_preferences
+from version import APP_VERSION, current_commit_id
 
 
+logger = logging.getLogger("uvicorn.error")
 application = FastAPI(title="Personal Finance")
 application.include_router(
     auth.fastapi_users.get_auth_router(auth.auth_backend),
@@ -35,8 +38,17 @@ application.include_router(
 @application.on_event("startup")
 async def startup() -> None:
     await auth.create_auth_tables()
-    with db():
-        pass
+    with db() as conn:
+        db_schema_version = database.schema_version(conn)
+        db_backend = getattr(conn, "backend", "sqlite")
+    logger.info(
+        "Personal Finance started app_version=%s app_commit=%s db_schema_version=%s latest_schema_version=%s db_backend=%s",
+        APP_VERSION,
+        current_commit_id(),
+        db_schema_version,
+        database.LATEST_SCHEMA_VERSION,
+        db_backend,
+    )
 
 
 @application.head("/{path:path}")

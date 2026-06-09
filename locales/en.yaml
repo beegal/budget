@@ -91,6 +91,8 @@ errors:
   password-min-length: Password must contain at least 8 characters.
   user-already-exists: This user already exists.
   different-account-required: Choose a different account
+  transfer-target-required: Add the target account after the dash, for example "Internal transfer - Cash".
+  transfer-target-not-found: "Internal transfer target account not found: {account}"
 profile:
   title: Profile
   display-preferences: Display preferences

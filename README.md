@@ -4,6 +4,16 @@ Personal Finance is a local web application for managing budgets by periods, acc
 
 The project intentionally stays simple: FastAPI, server-rendered Jinja templates, vanilla JavaScript/CSS, and a SQLAlchemy Core database layer that can use SQLite, MySQL or a full SQLAlchemy database URL.
 
+## Public Instance
+
+The current deployed instance is available at:
+
+```text
+https://budget.beegal.be
+```
+
+The deployment details are environment-specific; the application itself listens on HTTP port `8000` inside the Proxmox CT.
+
 ## Features
 
 - Create and browse budget periods.
@@ -363,7 +373,9 @@ The output is:
 dist/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst
 ```
 
-Install on Proxmox by downloading the release asset into the CT template cache:
+### Install The Proxmox CT
+
+Download the published CT template release asset into the Proxmox template cache:
 
 ```bash
 wget -O /var/lib/vz/template/cache/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst \
@@ -383,7 +395,18 @@ pct create 120 local:vztmpl/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.z
   --start 1
 ```
 
-After the first boot, browse to:
+The CT is self-initializing. On first boot, `personal-finance-firstboot.service` generates the MariaDB root password, the application database password, `BUDGET_AUTH_SECRET`, creates the database, creates the database user and initializes the schema.
+
+Check the installation from inside the CT:
+
+```bash
+systemctl status personal-finance-firstboot
+systemctl status mariadb
+systemctl status personal-finance
+curl -I http://127.0.0.1:8000/login
+```
+
+Then browse to:
 
 ```text
 http://<container-ip>:8000

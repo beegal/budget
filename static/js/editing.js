@@ -1139,7 +1139,7 @@ async function createLabelFromPicker(picker) {
     return;
   }
 
-  addLabelName(result.label.name);
+  if (!result.hidden) addLabelName(result.label.name);
   input.value = result.label.name;
   renderLabelSuggestions(picker);
   const row = picker.closest("tr");
@@ -1148,4 +1148,3 @@ async function createLabelFromPicker(picker) {
   else if (row?.closest("[data-budget-schedule-table]")) row.classList.add("dirty");
   else if (input.dataset.save) await saveCell(input);
 }
-

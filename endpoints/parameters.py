@@ -5,6 +5,7 @@ import json
 from components.parameters import account_row, empty_monthly_budget_row, monthly_budget_row, settings_row
 from database import db
 from i18n import translate
+from transfer_labels import is_internal_transfer_label
 from web_helpers import one, render_template, user_layout
 
 
@@ -26,6 +27,7 @@ def page(user_id: str) -> bytes:
             "SELECT * FROM transaction_labels WHERE user_id = ? ORDER BY name LIMIT 300",
             (user_id,),
         ).fetchall()
+        labels = [row for row in labels if not is_internal_transfer_label(row["name"])]
         budget_rows = conn.execute(
             "SELECT * FROM monthly_budget WHERE user_id = ? ORDER BY day, label",
             (user_id,),
@@ -68,6 +70,9 @@ def create_account(data: dict[str, list[str]], user_id: str) -> str:
 
 
 def create_label(data: dict[str, list[str]], user_id: str) -> str:
+    name = one(data, "name")
+    if is_internal_transfer_label(name):
+        return "/parameters"
     with db() as conn:
-        conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, one(data, "name")))
+        conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, name))
     return "/parameters"

@@ -56,7 +56,21 @@ FULL_EXPORT_TABLES = [
     ("budget_schedule", ["id", "user_id", "period_id", "label", "amount", "status"]),
     (
         "transactions",
-        ["id", "user_id", "period_id", "account_id", "date", "label", "amount", "sort_index", "comment", "created_at", "updated_at"],
+        [
+            "id",
+            "user_id",
+            "period_id",
+            "account_id",
+            "date",
+            "label",
+            "amount",
+            "sort_index",
+            "comment",
+            "transfer_pair_id",
+            "transfer_auto",
+            "created_at",
+            "updated_at",
+        ],
     ),
 ]
 USER_EXPORT_VERSION = "3"
@@ -71,7 +85,20 @@ USER_EXPORT_TABLES = [
     ("budget_schedule", ["id", "period_id", "label", "amount", "status"]),
     (
         "transactions",
-        ["id", "period_id", "account_id", "date", "label", "amount", "sort_index", "comment", "created_at", "updated_at"],
+        [
+            "id",
+            "period_id",
+            "account_id",
+            "date",
+            "label",
+            "amount",
+            "sort_index",
+            "comment",
+            "transfer_pair_id",
+            "transfer_auto",
+            "created_at",
+            "updated_at",
+        ],
     ),
 ]
 INTEGER_COLUMNS = {
@@ -81,10 +108,16 @@ INTEGER_COLUMNS = {
     "sort_index",
     "show_in_summary",
     "visible_if_empty",
+    "transfer_pair_id",
+    "transfer_auto",
     "day",
     "number_decimals",
 }
 FLOAT_COLUMNS = {"amount", "opening"}
+OPTIONAL_IMPORT_DEFAULTS = {
+    "transfer_pair_id": "",
+    "transfer_auto": "0",
+}
 
 
 @dataclass
@@ -486,7 +519,7 @@ def import_user_sheets(
     user_id: str,
 ) -> dict[str, int]:
     clear_user_data(conn, user_id)
-    id_maps: dict[str, dict[int, int]] = {"period": {}, "accounts": {}}
+    id_maps: dict[str, dict[int, int]] = {"period": {}, "accounts": {}, "transactions": {}}
     summary: dict[str, int] = {}
 
     profile_rows = (
@@ -581,15 +614,42 @@ def import_user_sheets(
 
     transaction_rows = full_import_rows(
         sheets["transactions"],
-        ["id", "period_id", "account_id", "date", "label", "amount", "sort_index", "comment", "created_at", "updated_at"],
+        [
+            "id",
+            "period_id",
+            "account_id",
+            "date",
+            "label",
+            "amount",
+            "sort_index",
+            "comment",
+            "transfer_pair_id",
+            "transfer_auto",
+            "created_at",
+            "updated_at",
+        ],
     )
-    for _old_id, period_id, account_id, tx_date, label, amount, sort_index, comment, created_at, updated_at in transaction_rows:
+    transaction_pair_updates: list[tuple[int, object]] = []
+    for (
+        _old_id,
+        period_id,
+        account_id,
+        tx_date,
+        label,
+        amount,
+        sort_index,
+        comment,
+        transfer_pair_id,
+        transfer_auto,
+        created_at,
+        updated_at,
+    ) in transaction_rows:
         if int(period_id) not in id_maps["period"] or int(account_id) not in id_maps["accounts"]:
             continue
         conn.execute(
             """
-            INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, sort_index, comment, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, sort_index, comment, transfer_pair_id, transfer_auto, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -600,10 +660,24 @@ def import_user_sheets(
                 amount,
                 sort_index,
                 comment,
+                None,
+                transfer_auto,
                 created_at,
                 updated_at,
             ),
         )
+        new_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        id_maps["transactions"][int(_old_id)] = new_id
+        transaction_pair_updates.append((new_id, transfer_pair_id))
+    for new_id, old_pair_id in transaction_pair_updates:
+        if old_pair_id is None:
+            continue
+        mapped_pair_id = id_maps["transactions"].get(int(old_pair_id))
+        if mapped_pair_id is not None:
+            conn.execute(
+                "UPDATE transactions SET transfer_pair_id = ? WHERE id = ? AND user_id = ?",
+                (mapped_pair_id, new_id, user_id),
+            )
     summary["transactions"] = len(transaction_rows)
     conn.commit()
     return summary
@@ -743,10 +817,12 @@ def full_import_rows(sheet: WorkbookSheet, expected_columns: list[str]) -> list[
     records = rows_to_records(sheet)
     rows: list[tuple[object, ...]] = []
     for index, record in enumerate(records, start=2):
-        missing = [column for column in expected_columns if column not in record]
+        missing = [column for column in expected_columns if column not in record and column not in OPTIONAL_IMPORT_DEFAULTS]
         if missing:
             raise ValueError(f"Onglet {sheet.name}, ligne {index}: colonne(s) manquante(s): {', '.join(missing)}")
-        rows.append(tuple(import_cell_value(column, record[column]) for column in expected_columns))
+        rows.append(
+            tuple(import_cell_value(column, record.get(column, OPTIONAL_IMPORT_DEFAULTS.get(column, ""))) for column in expected_columns)
+        )
     return rows
 
 

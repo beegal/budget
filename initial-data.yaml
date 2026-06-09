@@ -13,7 +13,6 @@ languages:
       - Internet
       - Transport
       - Restaurant
-      - Virement interne
   en:
     accounts:
       - name: Current account
@@ -28,7 +27,6 @@ languages:
       - Internet
       - Transport
       - Restaurant
-      - Internal transfer
   de:
     accounts:
       - name: Girokonto
@@ -43,7 +41,6 @@ languages:
       - Internet
       - Transport
       - Restaurant
-      - Interne Überweisung
   nl:
     accounts:
       - name: Zichtrekening
@@ -58,4 +55,3 @@ languages:
       - Internet
       - Vervoer
       - Restaurant
-      - Interne overschrijving

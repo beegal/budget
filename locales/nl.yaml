@@ -91,6 +91,8 @@ errors:
   password-min-length: Het wachtwoord moet minstens 8 tekens bevatten.
   user-already-exists: Deze gebruiker bestaat al.
   different-account-required: Kies een andere rekening
+  transfer-target-required: Voeg de doelrekening toe na het streepje, bijvoorbeeld "Interne overschrijving - Cash".
+  transfer-target-not-found: "Doelrekening voor interne overschrijving niet gevonden: {account}"
 profile:
   title: Profiel
   display-preferences: Weergavevoorkeuren

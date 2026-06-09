@@ -8,6 +8,7 @@ from components.transactions import transaction_view_rows
 from database import db
 from endpoints.filters import account_selector_view, parse_account_ids, parse_period_ids, period_selector_view
 from i18n import translate
+from transfer_labels import is_internal_transfer_label
 from web_helpers import money, one, render_template, user_layout
 
 
@@ -36,6 +37,7 @@ def page(query: str, user_id: str) -> bytes:
             values.append(f"%{search}%")
         where = "WHERE " + " AND ".join(clauses)
         labels = conn.execute("SELECT name FROM transaction_labels WHERE user_id = ? ORDER BY name", (user_id,)).fetchall()
+        labels = [row for row in labels if not is_internal_transfer_label(row["name"])]
         rows = conn.execute(
             f"""
             SELECT t.*, p.name AS period_name, a.name AS account_name
@@ -76,7 +78,8 @@ def create(data: dict[str, list[str]], user_id: str) -> str:
         account = conn.execute("SELECT id FROM accounts WHERE id = ? AND user_id = ?", (one(data, "account_id"), user_id)).fetchone()
         if period is None or account is None:
             return "/transactions"
-        conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label))
+        if not is_internal_transfer_label(label):
+            conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label))
         conn.execute(
             """
             INSERT INTO transactions(user_id, period_id, account_id, date, label, amount)

@@ -4,6 +4,12 @@ from datetime import date, datetime
 
 from database import db, integrity_errors
 from i18n import translate
+from transfer_labels import (
+    internal_transfer_mirror_label,
+    internal_transfer_target_name,
+    is_internal_transfer_label,
+    normalized_text,
+)
 from web_helpers import format_date, format_number, normalize_date
 
 
@@ -86,7 +92,7 @@ def save_transaction_row(payload: dict[str, object], user_id: str) -> dict[str, 
         account = conn.execute("SELECT id FROM accounts WHERE id = ? AND user_id = ?", (account_id, user_id)).fetchone()
         if account is None:
             raise ValueError(translate("errors.account-not-found"))
-        conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label))
+        ensure_transaction_label(conn, user_id, label)
         tx_id = payload.get("id")
         if tx_id:
             old = conn.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?", (int(tx_id), user_id)).fetchone()
@@ -117,6 +123,7 @@ def save_transaction_row(payload: dict[str, object], user_id: str) -> dict[str, 
             )
             saved_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         compact_transaction_indexes(conn, period_id, account_id, user_id)
+        sync_internal_transfer(conn, saved_id, user_id)
         sort_index = conn.execute("SELECT sort_index FROM transactions WHERE id = ? AND user_id = ?", (saved_id, user_id)).fetchone()["sort_index"]
         reconcile_budget_schedule(conn, period_id, user_id)
         rows = transaction_indexes(conn, period_id, account_id, user_id)
@@ -186,6 +193,169 @@ def parse_amount(value: object) -> float:
     raw = raw.replace("\xa0", "").replace(" ", "")
     raw = raw.replace("EUR", "").replace("eur", "").replace("euro", "")
     return float(raw.replace(",", ".") or 0)
+
+
+def ensure_transaction_label(conn, user_id: str, label: str) -> None:
+    if is_internal_transfer_label(label):
+        return
+    conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label))
+
+
+def sync_internal_transfer(conn, tx_id: int, user_id: str) -> None:
+    transaction = conn.execute(
+        """
+        SELECT t.*, a.name AS source_account_name
+        FROM transactions t
+        JOIN accounts a ON a.id = t.account_id
+        WHERE t.id = ? AND t.user_id = ?
+        """,
+        (tx_id, user_id),
+    ).fetchone()
+    if transaction is None or int(transaction["transfer_auto"] or 0):
+        return
+
+    pair_id = transaction["transfer_pair_id"]
+    if not is_internal_transfer_label(transaction["label"]):
+        delete_auto_transfer_pair(conn, pair_id, user_id)
+        conn.execute("UPDATE transactions SET transfer_pair_id = NULL WHERE id = ? AND user_id = ?", (tx_id, user_id))
+        return
+
+    target_name = internal_transfer_target_name(transaction["label"])
+    if not target_name:
+        raise ValueError(translate("errors.transfer-target-required"))
+    target = find_transfer_target_account(conn, target_name, int(transaction["account_id"]), user_id)
+    if target is None:
+        raise ValueError(translate("errors.transfer-target-not-found", account=target_name))
+
+    mirror_label = internal_transfer_mirror_label(transaction["label"], str(transaction["source_account_name"]))
+    mirror_amount = -float(transaction["amount"] or 0)
+    mirror_id = None
+    old_pair = None
+    if pair_id:
+        old_pair = conn.execute(
+            "SELECT * FROM transactions WHERE id = ? AND user_id = ? AND transfer_auto = 1",
+            (int(pair_id), user_id),
+        ).fetchone()
+
+    if old_pair is not None and int(old_pair["account_id"]) == int(target["id"]):
+        mirror_id = int(old_pair["id"])
+        conn.execute(
+            """
+            UPDATE transactions
+            SET period_id = ?, account_id = ?, date = ?, label = ?, amount = ?, comment = ?,
+                transfer_pair_id = ?, transfer_auto = 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND user_id = ?
+            """,
+            (
+                transaction["period_id"],
+                target["id"],
+                transaction["date"],
+                mirror_label,
+                mirror_amount,
+                transaction["comment"],
+                tx_id,
+                mirror_id,
+                user_id,
+            ),
+        )
+        compact_transaction_indexes(conn, int(transaction["period_id"]), int(target["id"]), user_id)
+    else:
+        delete_auto_transfer_pair(conn, pair_id, user_id)
+        existing_mirror = find_existing_transfer_mirror(conn, transaction, target["id"], mirror_label, mirror_amount, user_id)
+        if existing_mirror is not None:
+            mirror_id = int(existing_mirror["id"])
+            conn.execute(
+                """
+                UPDATE transactions
+                SET transfer_pair_id = ?, transfer_auto = 1, comment = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ?
+                """,
+                (tx_id, transaction["comment"], mirror_id, user_id),
+            )
+        else:
+            sort_index = next_transaction_index(conn, int(transaction["period_id"]), int(target["id"]), user_id)
+            shift_transaction_indexes(conn, int(transaction["period_id"]), int(target["id"]), sort_index, user_id)
+            conn.execute(
+                """
+                INSERT INTO transactions(
+                    user_id, period_id, account_id, date, label, amount, sort_index, comment,
+                    transfer_pair_id, transfer_auto
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    user_id,
+                    transaction["period_id"],
+                    target["id"],
+                    transaction["date"],
+                    mirror_label,
+                    mirror_amount,
+                    sort_index,
+                    transaction["comment"],
+                    tx_id,
+                ),
+            )
+            mirror_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        compact_transaction_indexes(conn, int(transaction["period_id"]), int(target["id"]), user_id)
+
+    conn.execute(
+        "UPDATE transactions SET transfer_pair_id = ?, transfer_auto = 0 WHERE id = ? AND user_id = ?",
+        (mirror_id, tx_id, user_id),
+    )
+
+
+def delete_auto_transfer_pair(conn, pair_id: object, user_id: str) -> None:
+    if not pair_id:
+        return
+    pair = conn.execute(
+        "SELECT period_id, account_id FROM transactions WHERE id = ? AND user_id = ? AND transfer_auto = 1",
+        (int(pair_id), user_id),
+    ).fetchone()
+    if pair is None:
+        return
+    conn.execute("DELETE FROM transactions WHERE id = ? AND user_id = ? AND transfer_auto = 1", (int(pair_id), user_id))
+    compact_transaction_indexes(conn, int(pair["period_id"]), int(pair["account_id"]), user_id)
+
+
+def find_transfer_target_account(conn, target_name: str, source_account_id: int, user_id: str):
+    rows = conn.execute("SELECT id, name FROM accounts WHERE user_id = ?", (user_id,)).fetchall()
+    normalized_target = normalized_text(target_name)
+    matches = [
+        row
+        for row in rows
+        if int(row["id"]) != source_account_id and normalized_text(row["name"]) == normalized_target
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def find_existing_transfer_mirror(conn, transaction, target_account_id: int, mirror_label: str, mirror_amount: float, user_id: str):
+    return conn.execute(
+        """
+        SELECT *
+        FROM transactions
+        WHERE user_id = ?
+          AND period_id = ?
+          AND account_id = ?
+          AND COALESCE(date, '') = COALESCE(?, '')
+          AND label = ?
+          AND ABS(amount - ?) < 0.005
+          AND id <> ?
+          AND transfer_pair_id IS NULL
+        ORDER BY id
+        LIMIT 1
+        """,
+        (
+            user_id,
+            transaction["period_id"],
+            target_account_id,
+            transaction["date"],
+            mirror_label,
+            mirror_amount,
+            transaction["id"],
+        ),
+    ).fetchone()
 
 
 def validate_transaction_date(conn: sqlite3.Connection, period_id: int, tx_date: str | None, user_id: str) -> None:
@@ -344,6 +514,13 @@ def delete_transaction(payload: dict[str, object], user_id: str) -> dict[str, ob
         row = conn.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?", (int(payload["id"]), user_id)).fetchone()
         if row is None:
             raise ValueError(translate("errors.transaction-not-found"))
+        if int(row["transfer_auto"] or 0):
+            conn.execute(
+                "UPDATE transactions SET transfer_pair_id = NULL WHERE id = ? AND user_id = ?",
+                (row["transfer_pair_id"], user_id),
+            )
+        else:
+            delete_auto_transfer_pair(conn, row["transfer_pair_id"], user_id)
         conn.execute("DELETE FROM transactions WHERE id = ? AND user_id = ?", (int(payload["id"]), user_id))
         compact_transaction_indexes(conn, int(row["period_id"]), int(row["account_id"]), user_id)
         reconcile_budget_schedule(conn, int(row["period_id"]), user_id)
@@ -355,6 +532,18 @@ def clear_transactions(payload: dict[str, object], user_id: str) -> dict[str, ob
     with db() as conn:
         period_id = int(payload["period_id"])
         account_id = int(payload["account_id"])
+        rows_to_delete = conn.execute(
+            "SELECT id, transfer_pair_id, transfer_auto FROM transactions WHERE period_id = ? AND account_id = ? AND user_id = ?",
+            (period_id, account_id, user_id),
+        ).fetchall()
+        for row in rows_to_delete:
+            if int(row["transfer_auto"] or 0):
+                conn.execute(
+                    "UPDATE transactions SET transfer_pair_id = NULL WHERE id = ? AND user_id = ?",
+                    (row["transfer_pair_id"], user_id),
+                )
+            else:
+                delete_auto_transfer_pair(conn, row["transfer_pair_id"], user_id)
         conn.execute("DELETE FROM transactions WHERE period_id = ? AND account_id = ? AND user_id = ?", (period_id, account_id, user_id))
         reconcile_budget_schedule(conn, period_id, user_id)
     return {"rows": []}
@@ -399,7 +588,9 @@ def create_label_from_text(payload: dict[str, object], user_id: str) -> dict[str
         raise ValueError(translate("errors.label-required"))
 
     with db() as conn:
-        conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label_name))
+        if is_internal_transfer_label(label_name):
+            return {"label": {"id": None, "name": label_name}, "hidden": True}
+        ensure_transaction_label(conn, user_id, label_name)
         label = conn.execute(
             "SELECT id, name FROM transaction_labels WHERE user_id = ? AND name = ?",
             (user_id, label_name),
@@ -455,7 +646,7 @@ def save_budget_schedule_row(payload: dict[str, object], user_id: str) -> dict[s
         period = conn.execute("SELECT id FROM period WHERE id = ? AND user_id = ?", (period_id, user_id)).fetchone()
         if period is None:
             raise ValueError(translate("errors.period-not-found"))
-        conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label))
+        ensure_transaction_label(conn, user_id, label)
         conn.execute(
             "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, 'scheduled')",
             (user_id, period_id, label, amount),
@@ -487,7 +678,7 @@ def instantiate_budget_schedule(payload: dict[str, object], user_id: str) -> dic
         label = str(scheduled["label"])
         amount = float(scheduled["amount"] or 0)
         period_id = int(scheduled["period_id"])
-        conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label))
+        ensure_transaction_label(conn, user_id, label)
         sort_index = next_transaction_index(conn, period_id, account_id, user_id)
         shift_transaction_indexes(conn, period_id, account_id, sort_index, user_id)
         conn.execute(
@@ -499,6 +690,7 @@ def instantiate_budget_schedule(payload: dict[str, object], user_id: str) -> dic
         )
         tx_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         compact_transaction_indexes(conn, period_id, account_id, user_id)
+        sync_internal_transfer(conn, int(tx_id), user_id)
         reconcile_budget_schedule(conn, period_id, user_id)
         sort_index = conn.execute("SELECT sort_index FROM transactions WHERE id = ? AND user_id = ?", (tx_id, user_id)).fetchone()["sort_index"]
     return {
@@ -532,25 +724,21 @@ def update_transaction(payload: dict[str, object], user_id: str) -> dict[str, ob
             raise ValueError(translate("errors.label-required"))
     with db() as conn:
         month_ids: set[int] = set()
+        row = conn.execute("SELECT period_id FROM transactions WHERE id = ? AND user_id = ?", (tx_id, user_id)).fetchone()
+        if row is None:
+            raise ValueError(translate("errors.transaction-not-found"))
+        month_ids.add(int(row["period_id"]))
         if field == "date":
-            row = conn.execute("SELECT period_id FROM transactions WHERE id = ? AND user_id = ?", (tx_id, user_id)).fetchone()
-            if row is None:
-                raise ValueError(translate("errors.transaction-not-found"))
-            month_ids.add(int(row["period_id"]))
             validate_transaction_date(conn, int(row["period_id"]), value, user_id)
-        if field in {"label", "amount"}:
-            row = conn.execute("SELECT period_id FROM transactions WHERE id = ? AND user_id = ?", (tx_id, user_id)).fetchone()
-            if row is None:
-                raise ValueError(translate("errors.transaction-not-found"))
-            month_ids.add(int(row["period_id"]))
         if field == "label":
-            conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, value))
+            ensure_transaction_label(conn, user_id, value)
             conn.execute(
                 "UPDATE transactions SET label = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
                 (value, tx_id, user_id),
             )
         else:
             conn.execute(f"UPDATE transactions SET {field} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?", (value, tx_id, user_id))
+        sync_internal_transfer(conn, tx_id, user_id)
         for period_id in month_ids:
             reconcile_budget_schedule(conn, period_id, user_id)
     if field == "amount":

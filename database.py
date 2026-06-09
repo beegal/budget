@@ -36,6 +36,9 @@ ROOT = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("BUDGET_SQLITE_PATH", str(ROOT / "data" / "budget.sqlite3"))).expanduser()
 INITIAL_DATA_PATH = ROOT / "initial-data.yaml"
 INITIAL_DATA_SEED_KEY = "initial-data"
+MIGRATIONS_DIR = ROOT / "migrations"
+LATEST_SCHEMA_VERSION = 1
+MIGRATION_FILENAME_RE = re.compile(r"^migration_(\d+)_(\d+)\.sql$")
 LEGACY_USER_ID = "00000000-0000-0000-0000-000000000001"
 USER_SCOPED_TABLES = (
     "period",
@@ -592,6 +595,7 @@ def ensure_schema(conn: sqlite3.Connection | SQLAlchemyConnection) -> None:
     else:
         conn.executescript(sqlite_schema())
         ensure_sqlite_user_columns(conn)
+    run_schema_migrations(conn)
     conn.execute(
         """
         INSERT OR IGNORE INTO transaction_labels(user_id, name)
@@ -759,8 +763,125 @@ def migrate_sqlite_multi_user(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
 
 
-def table_has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+def table_has_column(conn: sqlite3.Connection | SQLAlchemyConnection, table: str, column: str) -> bool:
+    if isinstance(conn, SQLAlchemyConnection) and conn.backend == "mysql":
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = ?
+              AND column_name = ?
+            """,
+            (table, column),
+        ).fetchone()
+        return bool(row and int(row["count"] or 0))
+    if isinstance(conn, SQLAlchemyConnection) and conn.backend not in {"sqlite", "mysql"}:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = ?
+              AND column_name = ?
+            """,
+            (table, column),
+        ).fetchone()
+        return bool(row and int(row["count"] or 0))
     return any(row["name"] == column for row in conn.execute(f"PRAGMA table_info({table})").fetchall())
+
+
+def table_exists(conn: sqlite3.Connection | SQLAlchemyConnection, table: str) -> bool:
+    if isinstance(conn, SQLAlchemyConnection) and conn.backend == "mysql":
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name = ?
+            """,
+            (table,),
+        ).fetchone()
+        return bool(row and int(row["count"] or 0))
+    if isinstance(conn, SQLAlchemyConnection) and conn.backend not in {"sqlite", "mysql"}:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM information_schema.tables
+            WHERE table_schema = current_schema()
+              AND table_name = ?
+            """,
+            (table,),
+        ).fetchone()
+        return bool(row and int(row["count"] or 0))
+    return bool(
+        conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+    )
+
+
+def schema_version(conn: sqlite3.Connection | SQLAlchemyConnection) -> int:
+    if not table_exists(conn, "schema_version"):
+        return 0
+    row = conn.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1").fetchone()
+    return int(row["version"] or 0) if row else 0
+
+
+def migration_files() -> dict[int, tuple[int, Path]]:
+    migrations: dict[int, tuple[int, Path]] = {}
+    if not MIGRATIONS_DIR.exists():
+        return migrations
+    for path in MIGRATIONS_DIR.iterdir():
+        match = MIGRATION_FILENAME_RE.match(path.name)
+        if not match:
+            continue
+        source_version = int(match.group(1))
+        target_version = int(match.group(2))
+        if source_version in migrations:
+            raise RuntimeError(f"Duplicate migration source version {source_version}: {path.name}")
+        migrations[source_version] = (target_version, path)
+    return migrations
+
+
+def run_schema_migrations(conn: sqlite3.Connection | SQLAlchemyConnection) -> None:
+    current_version = schema_version(conn)
+    migrations = migration_files()
+    while current_version < LATEST_SCHEMA_VERSION:
+        migration = migrations.get(current_version)
+        if migration is None:
+            raise RuntimeError(f"Missing migration from schema version {current_version}")
+        target_version, path = migration
+        if target_version <= current_version:
+            raise RuntimeError(f"Invalid migration target in {path.name}")
+        execute_migration_file(conn, path)
+        migrated_version = schema_version(conn)
+        if migrated_version < target_version:
+            raise RuntimeError(f"Migration {path.name} did not update schema_version to {target_version}")
+        current_version = migrated_version
+
+
+def execute_migration_file(conn: sqlite3.Connection | SQLAlchemyConnection, path: Path) -> None:
+    for statement in split_sql_script(path.read_text(encoding="utf-8")):
+        try:
+            conn.execute(statement)
+        except sqlite3.DatabaseError as error:
+            if ignorable_migration_error(error):
+                continue
+            raise
+        except DBAPIError as error:
+            if ignorable_migration_error(error):
+                continue
+            raise
+
+
+def ignorable_migration_error(error: BaseException) -> bool:
+    original = getattr(error, "orig", error)
+    message = str(original).lower()
+    args = getattr(original, "args", ())
+    code = args[0] if args else getattr(original, "pgcode", None)
+    return code in (1060, 1061, "42701", "42P07") or "duplicate column" in message or "already exists" in message
 
 
 def copy_legacy_sqlite_data(conn: sqlite3.Connection) -> None:
@@ -917,7 +1038,11 @@ def seed_empty_database(conn: sqlite3.Connection | MySQLConnection, user_id: str
             (user_id, period_id, account_id),
         )
 
+    from transfer_labels import is_internal_transfer_label
+
     for label in initial_labels(localized_initial_data):
+        if is_internal_transfer_label(label):
+            continue
         conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label))
 
 
@@ -936,7 +1061,7 @@ def default_initial_data() -> dict[str, Any]:
                     {"name": "Compte courant", "show_in_summary": True},
                     {"name": "Compte epargne", "show_in_summary": True},
                 ],
-                "labels": ["Salaire", "Courses", "Loyer", "Electricite", "Internet", "Transport", "Restaurant", "Virement interne"],
+                "labels": ["Salaire", "Courses", "Loyer", "Electricite", "Internet", "Transport", "Restaurant"],
             }
         }
     }

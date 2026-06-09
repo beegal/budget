@@ -6,6 +6,7 @@ from datetime import datetime
 
 from components.common import icon, label_picker, row_action_buttons
 from i18n import translate
+from transfer_labels import is_internal_transfer_group
 from web_helpers import format_date, format_number, money, transaction_filter_url
 from user_preferences import current_number_decimals
 
@@ -211,8 +212,7 @@ def budget_schedule_actions_view(status: str) -> list[dict[str, str]]:
 
 
 def is_transfer_group(label_group: str) -> bool:
-    normalized = label_group.strip().lower()
-    return normalized in {"virement interne", "transfert", "transferts", "transfert interne", "transferts internes"}
+    return is_internal_transfer_group(label_group)
 
 
 def account_tab_view(

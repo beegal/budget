@@ -7,6 +7,7 @@ from components.common import panel_message
 from components.period import account_tab_view, budget_tab_view, overview_view, period_tabs_view
 from database import db
 from i18n import translate
+from transfer_labels import is_internal_transfer_label
 from web_helpers import period_label, render_template, user_layout
 
 
@@ -28,6 +29,7 @@ def page(period_id: int, query: str, user_id: str) -> bytes:
         ).fetchall()
         accounts = period_accounts(conn, period_id, user_id)
         labels = conn.execute("SELECT id, name FROM transaction_labels WHERE user_id = ? ORDER BY name", (user_id,)).fetchall()
+        labels = [row for row in labels if not is_internal_transfer_label(row["name"])]
         summary_rows = period_summary_rows(conn, period_id, user_id)
         balance_rows = period_balance_rows(conn, period_id, user_id)
         transfer_rows = period_transfer_rows(conn, period_id, user_id)
@@ -183,7 +185,7 @@ def period_balance_rows(conn: sqlite3.Connection, period_id: int, user_id: str) 
 
 
 def period_transfer_rows(conn: sqlite3.Connection, period_id: int, user_id: str) -> list[sqlite3.Row]:
-    return conn.execute(
+    rows = conn.execute(
         """
         SELECT t.date,
                a.name AS account_name,
@@ -193,13 +195,8 @@ def period_transfer_rows(conn: sqlite3.Connection, period_id: int, user_id: str)
         JOIN accounts a ON a.id = t.account_id
         WHERE t.period_id = ?
           AND t.user_id = ?
-          AND LOWER(TRIM(
-                CASE
-                    WHEN INSTR(t.label, '-') > 0 THEN SUBSTR(t.label, 1, INSTR(t.label, '-') - 1)
-                    ELSE t.label
-                END
-              )) IN ('virement interne', 'transfert', 'transferts', 'transfert interne', 'transferts internes')
         ORDER BY COALESCE(t.date, '9999-12-31'), t.sort_index, t.id
         """,
         (period_id, user_id),
     ).fetchall()
+    return [row for row in rows if is_internal_transfer_label(row["label"])]

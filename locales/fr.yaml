@@ -109,6 +109,8 @@ errors:
   password-min-length: Le mot de passe doit contenir au moins 8 caractères.
   user-already-exists: Cet utilisateur existe déjà.
   different-account-required: Choisis un compte différent
+  transfer-target-required: Indique le compte cible après le tiret, par exemple "Virement interne - Cash".
+  transfer-target-not-found: "Compte cible du virement interne introuvable: {account}"
 transactions:
   title: Transactions
   no-transaction: Aucune transaction.
