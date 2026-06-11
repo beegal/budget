@@ -21,3 +21,15 @@ After first boot, browse to:
 ```text
 http://<container-ip>:8000
 ```
+
+The current known-good release asset is:
+
+```text
+https://github.com/beegal/budget/releases/download/v0.1.5/personal-finance-debian12-mariadb-amd64-v0.1.5.tar.zst
+```
+
+Build the same version locally from the repository root:
+
+```bash
+VERSION=v0.1.5 build/lxc/build-template.sh
+```

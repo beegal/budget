@@ -575,6 +575,7 @@ document.addEventListener("click", async (event) => {
     const picker = suggestion.closest("[data-label-picker]");
     const input = picker.querySelector("[data-label-input]");
     input.value = suggestion.dataset.labelSuggestion;
+    renderLabelSuggestions(picker);
     picker.querySelector("[data-label-suggestions]").hidden = true;
     const row = picker.closest("tr");
     if (row?.closest("[data-transaction-table]")) markRowDirty(row);
@@ -726,4 +727,3 @@ document.addEventListener("submit", async (event) => {
     await submitAuthForm(registerForm, "register");
   }
 });
-

@@ -34,14 +34,14 @@ The deployment details are environment-specific; the application itself listens 
 
 Approximate workspace stats, excluding local databases and temporary files:
 
-- 164 application files.
-- About 15,365 lines.
-- 28 Python files, about 5,915 lines.
+- 185 application files.
+- About 18,040 lines.
+- 34 Python files, about 6,679 lines.
 - 105 HTML/Jinja templates, about 3,730 lines.
-- 5 JavaScript files, about 2,137 lines.
+- 5 JavaScript files, about 2,150 lines.
 - 1 main CSS file, about 2,027 lines.
 - 4 locale YAML files: `fr`, `en`, `de`, `nl`.
-- 25 FastAPI routes.
+- 78 route declarations and route-like handlers across the FastAPI app and endpoints.
 - 10 local SVG icons.
 
 ## Data
@@ -102,7 +102,7 @@ Python unit tests use `unittest`:
 python3 -m unittest discover -s tests -v
 ```
 
-Current tests cover date parsing and display, language preference detection, translation fallback, user profile defaults and SQLAlchemy database URL handling.
+Current tests cover date parsing and display, language preference detection, translation fallback, user profile defaults, SQLAlchemy database URL handling, schema migrations, security limit configuration and XLSX zip bomb detection.
 
 Docker/MySQL integration tests are opt-in because they build and run containers:
 
@@ -183,7 +183,7 @@ BUDGET_ZIP_MAX_COMPRESSION_RATIO=100
 
 In production, `BUDGET_AUTH_SECRET` must be long and private. Set `BUDGET_ONLY_HTTPS=1` behind HTTPS; this enables HSTS and makes auth cookies secure by default. `BUDGET_AUTH_COOKIE_SECURE` can still override the cookie flag explicitly. If no auth secret is configured, the application generates a non-predictable secret at startup, which is safer than a hardcoded default but invalidates existing sessions on restart.
 
-`BUDGET_MAX_UPLOAD` limits request bodies and user import files in bytes. `BUDGET_ZIP_MAX_FILES`, `BUDGET_ZIP_MAX_UNCOMPRESSED_FACTOR`, and `BUDGET_ZIP_MAX_COMPRESSION_RATIO` protect workbook imports against suspicious ZIP/XLSX archives. `BUDGET_MAX_ACCOUNT` and `BUDGET_MAX_DAILY_NEW_ACCOUNT` limit public registration.
+`BUDGET_MAX_UPLOAD` limits request bodies and user import files in bytes. `BUDGET_ZIP_MAX_FILES`, `BUDGET_ZIP_MAX_UNCOMPRESSED_FACTOR`, and `BUDGET_ZIP_MAX_COMPRESSION_RATIO` protect workbook imports against suspicious ZIP/XLSX archives by checking file count, per-file size, total decompressed size and compression ratio. `BUDGET_MAX_ACCOUNT` and `BUDGET_MAX_DAILY_NEW_ACCOUNT` limit public registration.
 
 The same security defaults can be set in `config.yaml`; environment variables override YAML values:
 
@@ -210,7 +210,7 @@ BUDGET_MYSQL_PASSWORD=... \
 python3 budget_cli.py --db-backend mysql db create
 ```
 
-MySQL databases are created with `CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`. Tables inherit the database defaults. The schema does not force a table engine and lets MySQL use its default engine, normally InnoDB.
+MySQL databases are created with `CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`. Tables inherit the database defaults. The schema does not force a table engine and lets MySQL use its default engine, normally InnoDB. The schema is tested against MySQL 8.4; timestamp defaults use datetime-compatible columns.
 
 ## UX Conventions
 
@@ -373,26 +373,26 @@ Build locally on a Debian/Ubuntu host:
 ```bash
 sudo apt-get update
 sudo apt-get install -y zstd
-VERSION=v0.1.3 build/lxc/build-template.sh
+VERSION=v0.1.5 build/lxc/build-template.sh
 ```
 
 By default the build downloads the latest official Proxmox Debian 12 standard template from `download.proxmox.com`. To pin a base template version:
 
 ```bash
-PROXMOX_TEMPLATE_VERSION=12.12-1 VERSION=v0.1.3 build/lxc/build-template.sh
+PROXMOX_TEMPLATE_VERSION=12.12-1 VERSION=v0.1.5 build/lxc/build-template.sh
 ```
 
 To use a custom base template URL:
 
 ```bash
 PROXMOX_TEMPLATE_URL=http://download.proxmox.com/images/system/debian-12-standard_12.12-1_amd64.tar.zst \
-  VERSION=v0.1.3 build/lxc/build-template.sh
+  VERSION=v0.1.5 build/lxc/build-template.sh
 ```
 
 The output is:
 
 ```text
-dist/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst
+dist/personal-finance-debian12-mariadb-amd64-v0.1.5.tar.zst
 ```
 
 ### Install The Proxmox CT
@@ -400,14 +400,14 @@ dist/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst
 Download the published CT template release asset into the Proxmox template cache:
 
 ```bash
-wget -O /var/lib/vz/template/cache/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst \
-  https://github.com/beegal/budget/releases/download/v0.1.3/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst
+wget -O /var/lib/vz/template/cache/personal-finance-debian12-mariadb-amd64-v0.1.5.tar.zst \
+  https://github.com/beegal/budget/releases/download/v0.1.5/personal-finance-debian12-mariadb-amd64-v0.1.5.tar.zst
 ```
 
 Create the CT:
 
 ```bash
-pct create 120 local:vztmpl/personal-finance-debian12-mariadb-amd64-v0.1.3.tar.zst \
+pct create 120 local:vztmpl/personal-finance-debian12-mariadb-amd64-v0.1.5.tar.zst \
   --hostname personal-finance \
   --cores 1 \
   --memory 1024 \
