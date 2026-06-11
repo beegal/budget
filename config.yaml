@@ -20,3 +20,12 @@ languages:
     icon: 🇬🇧
     locale: en_US.UTF-8
     date-format: mm/dd/yy
+
+security:
+  only-https: false
+  max-upload: 5242880
+  max-account: 25
+  max-daily-new-account: 5
+  zip-max-files: 200
+  zip-max-uncompressed-factor: 5
+  zip-max-compression-ratio: 100

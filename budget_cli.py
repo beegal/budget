@@ -19,7 +19,7 @@ from rich.table import Table
 import typer
 
 import database
-from security import max_upload_bytes
+from security import max_upload_bytes, zip_max_compression_ratio, zip_max_files, zip_max_uncompressed_factor
 from user_preferences import ensure_user_preferences
 
 
@@ -1020,15 +1020,20 @@ def validate_upload_size(size: int) -> None:
 
 def validate_xlsx_archive_limits(archive: ZipFile) -> None:
     infos = archive.infolist()
-    if len(infos) > 200:
+    if len(infos) > zip_max_files():
         raise ValueError("Import workbook contains too many files.")
     max_size = max_upload_bytes()
+    max_ratio = zip_max_compression_ratio()
     total_size = 0
     for info in infos:
         total_size += info.file_size
+        if info.compress_size == 0 and info.file_size > 0:
+            raise ValueError("Import workbook contains a suspicious compressed file.")
+        if info.compress_size > 0 and info.file_size / info.compress_size > max_ratio:
+            raise ValueError("Import workbook compression ratio is suspicious.")
         if info.file_size > max_size:
             raise ValueError("Import workbook contains a file that is too large.")
-    if total_size > max_size * 5:
+    if total_size > max_size * zip_max_uncompressed_factor():
         raise ValueError("Import workbook is too large after decompression.")
 
 

@@ -3,8 +3,11 @@ from __future__ import annotations
 import os
 import sqlite3
 import unittest
+from io import BytesIO
 from unittest.mock import patch
+from zipfile import ZIP_DEFLATED, ZipFile
 
+import budget_cli
 import database
 import security
 from endpoints.api import ensure_transaction_label, sync_internal_transfer
@@ -191,6 +194,46 @@ class SecurityConfigurationTests(unittest.TestCase):
             self.assertEqual(security.max_upload_bytes(), 1234)
             self.assertEqual(security.max_accounts(), 7)
             self.assertEqual(security.max_daily_new_accounts(), 2)
+
+    def test_security_limits_fall_back_to_yaml_config(self) -> None:
+        config = {
+            "security": {
+                "only-https": True,
+                "max-upload": 4567,
+                "max-account": 8,
+                "max-daily-new-account": 3,
+                "zip-max-files": 20,
+                "zip-max-uncompressed-factor": 4,
+                "zip-max-compression-ratio": 12.5,
+            }
+        }
+        with patch.dict(os.environ, {}, clear=True), patch("security.load_config", return_value=config):
+            self.assertTrue(security.only_https())
+            self.assertEqual(security.max_upload_bytes(), 4567)
+            self.assertEqual(security.max_accounts(), 8)
+            self.assertEqual(security.max_daily_new_accounts(), 3)
+            self.assertEqual(security.zip_max_files(), 20)
+            self.assertEqual(security.zip_max_uncompressed_factor(), 4)
+            self.assertEqual(security.zip_max_compression_ratio(), 12.5)
+
+    def test_workbook_zip_bomb_ratio_is_rejected(self) -> None:
+        payload = BytesIO()
+        with ZipFile(payload, "w", compression=ZIP_DEFLATED) as archive:
+            archive.writestr("xl/worksheets/sheet1.xml", "A" * 1000)
+
+        payload.seek(0)
+        with ZipFile(payload) as archive, patch.dict(
+            os.environ,
+            {
+                "BUDGET_MAX_UPLOAD": "1000000",
+                "BUDGET_ZIP_MAX_FILES": "20",
+                "BUDGET_ZIP_MAX_UNCOMPRESSED_FACTOR": "5",
+                "BUDGET_ZIP_MAX_COMPRESSION_RATIO": "1.1",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(ValueError, "compression ratio"):
+                budget_cli.validate_xlsx_archive_limits(archive)
 
 
 class DatabaseConfigurationTests(unittest.TestCase):

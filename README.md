@@ -176,11 +176,27 @@ BUDGET_AUTH_LIFETIME=2592000
 BUDGET_MAX_UPLOAD=5242880
 BUDGET_MAX_ACCOUNT=25
 BUDGET_MAX_DAILY_NEW_ACCOUNT=5
+BUDGET_ZIP_MAX_FILES=200
+BUDGET_ZIP_MAX_UNCOMPRESSED_FACTOR=5
+BUDGET_ZIP_MAX_COMPRESSION_RATIO=100
 ```
 
 In production, `BUDGET_AUTH_SECRET` must be long and private. Set `BUDGET_ONLY_HTTPS=1` behind HTTPS; this enables HSTS and makes auth cookies secure by default. `BUDGET_AUTH_COOKIE_SECURE` can still override the cookie flag explicitly. If no auth secret is configured, the application generates a non-predictable secret at startup, which is safer than a hardcoded default but invalidates existing sessions on restart.
 
-`BUDGET_MAX_UPLOAD` limits request bodies and user import files in bytes. `BUDGET_MAX_ACCOUNT` and `BUDGET_MAX_DAILY_NEW_ACCOUNT` limit public registration.
+`BUDGET_MAX_UPLOAD` limits request bodies and user import files in bytes. `BUDGET_ZIP_MAX_FILES`, `BUDGET_ZIP_MAX_UNCOMPRESSED_FACTOR`, and `BUDGET_ZIP_MAX_COMPRESSION_RATIO` protect workbook imports against suspicious ZIP/XLSX archives. `BUDGET_MAX_ACCOUNT` and `BUDGET_MAX_DAILY_NEW_ACCOUNT` limit public registration.
+
+The same security defaults can be set in `config.yaml`; environment variables override YAML values:
+
+```yaml
+security:
+  only-https: false
+  max-upload: 5242880
+  max-account: 25
+  max-daily-new-account: 5
+  zip-max-files: 200
+  zip-max-uncompressed-factor: 5
+  zip-max-compression-ratio: 100
+```
 
 To create a MySQL database and user with the CLI:
 
