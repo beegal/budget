@@ -264,6 +264,11 @@ class DatabaseConfigurationTests(unittest.TestCase):
             "INSERT INTO transaction_labels (user_id, name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
         )
 
+    def test_mysql_schema_uses_datetime_for_user_created_at(self) -> None:
+        schema = "\n".join(database.mysql_schema_statements())
+        self.assertIn("created_at DATETIME DEFAULT CURRENT_TIMESTAMP", schema)
+        self.assertNotIn("created_at VARCHAR(32) DEFAULT CURRENT_TIMESTAMP", schema)
+
 
 if __name__ == "__main__":
     unittest.main()

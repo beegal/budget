@@ -12,7 +12,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, schemas
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport, JWTStrategy
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
-from sqlalchemy import text as sql_text
+from sqlalchemy import DateTime, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import DeclarativeBase
@@ -34,7 +34,7 @@ class Base(DeclarativeBase):
 class User(SQLAlchemyBaseUserTableUUID, Base):
     __tablename__ = "users"
     last_login: Mapped[str | None] = mapped_column(nullable=True)
-    created_at: Mapped[str | None] = mapped_column(nullable=True, server_default=sql_text("CURRENT_TIMESTAMP"))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, server_default=sql_text("CURRENT_TIMESTAMP"))
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -85,10 +85,11 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             if request
             else None
         )
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with database.db() as conn:
             conn.execute(
                 "UPDATE users SET created_at = COALESCE(created_at, ?) WHERE id = ?",
-                (datetime.now().isoformat(timespec="seconds"), str(user.id)),
+                (created_at, str(user.id)),
             )
             database.adopt_legacy_data(conn, str(user.id))
             ensure_user_preferences(conn, str(user.id), language_id)

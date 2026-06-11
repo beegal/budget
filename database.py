@@ -63,7 +63,7 @@ users_table = Table(
     Column("is_superuser", Boolean, nullable=False, server_default="0"),
     Column("is_verified", Boolean, nullable=False, server_default="0"),
     Column("last_login", String(32)),
-    Column("created_at", String(32), server_default=sql_text("CURRENT_TIMESTAMP")),
+    Column("created_at", DateTime, server_default=sql_text("CURRENT_TIMESTAMP")),
 )
 
 Table(
@@ -469,7 +469,7 @@ def mysql_schema_statements() -> list[str]:
             is_superuser BOOL NOT NULL DEFAULT FALSE,
             is_verified BOOL NOT NULL DEFAULT FALSE,
             last_login VARCHAR(32),
-            created_at VARCHAR(32) DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
