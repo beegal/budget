@@ -15,7 +15,9 @@ def parse_account_ids(params: dict[str, list[str]], accounts: list[sqlite3.Row])
 
 def parse_row_ids(raw: str, rows: list[sqlite3.Row]) -> tuple[list[int], bool]:
     all_ids = [int(row["id"]) for row in rows]
-    if not raw or raw in {"all", "none"}:
+    if raw == "none":
+        return [], False
+    if not raw or raw == "all":
         return all_ids, True
     by_name = {str(row["name"]).casefold(): int(row["id"]) for row in rows}
     selected: list[int] = []
@@ -43,7 +45,7 @@ def row_selector_view(rows: list[sqlite3.Row], selected_ids: list[int], all_sele
     selected_set = set(selected_ids)
     selected_rows = rows if all_selected else [row for row in rows if int(row["id"]) in selected_set]
     return {
-        "value": "all" if all_selected else ",".join(str(period_id) for period_id in selected_ids),
+        "value": "all" if all_selected else "none" if not selected_ids else ",".join(str(period_id) for period_id in selected_ids),
         "all_selected": all_selected,
         "periods": [
             {

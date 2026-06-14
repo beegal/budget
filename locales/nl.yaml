@@ -6,6 +6,7 @@ nav:
   transactions: Transacties
   summary: Overzicht
   profile: Profiel
+  tools: Hulpmiddelen
   admin: Admin
   logout: Afmelden
 js:
@@ -32,10 +33,17 @@ js:
 common:
   date: Datum
   label: Rubriek
+  labels: Rubrieken
   amount: Bedrag
   comment: Opmerking
   account: Rekening
   total: Totaal
+  income: Inkomsten
+  expense: Uitgaven
+  net: Netto
+  all: Alle
+  none-selection: Geen selectie
+  remove: Verwijderen {name}
 filters:
   label-placeholder: "Bijv.: Boodschappen - Supermarkt"
 parameters:
@@ -98,6 +106,17 @@ profile:
   display-preferences: Weergavevoorkeuren
   date-format: Datumweergaveformaat
   number-decimals: Aantal decimalen
+tools:
+  title: Hulpmiddelen
+  label-merge-title: Rubrieken samenvoegen
+  merge-to-label: Doelrubriek
+  merge-from-label: Rubriek samenvoegen en verwijderen
+  merge-from-placeholder: Rubrieken om samen te voegen
+  merge-button: Samenvoegen
+  empty-label-message: Er wordt geen rubriek gebruikt in transacties om samen te voegen.
+  source-required: Selecteer minstens een rubriek om samen te voegen.
+  same-label-error: Kies twee verschillende rubrieken.
+  label-merge-done: Samenvoegen voltooid. {transactions} transactie(s), {budgets} maandbudgetregel(s) en {scheduled} periodebudgetregel(s) bijgewerkt.
 periods:
   open: Openen
   create-title: Periode maken
@@ -146,3 +165,8 @@ period:
   date-not-recognized: De datum van deze transactie wordt niet herkend.
   date-before-period: "Datum buiten periode: {date} ligt voor het begin {start}."
   date-after-period: "Datum buiten periode: {date} ligt na het einde {end}."
+summary:
+  label-filter: Rubriekfilter
+  filter-list: Lijst filteren
+  line: Lijn
+  sum: Som

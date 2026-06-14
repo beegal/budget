@@ -7,6 +7,7 @@ import subprocess
 import time
 import unittest
 from pathlib import Path
+from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -28,7 +29,9 @@ def docker_info(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
 def docker_environment() -> tuple[dict[str, str], str]:
     env = dict(os.environ)
     if docker_info(env).returncode == 0:
-        return env, "127.0.0.1"
+        docker_host = env.get("DOCKER_HOST", "")
+        parsed_host = urlparse(docker_host).hostname if docker_host else None
+        return env, parsed_host or "127.0.0.1"
     if shutil.which("minikube") is None:
         return env, "127.0.0.1"
 
@@ -88,6 +91,7 @@ class DockerMySQLIntegrationTests(unittest.TestCase):
             "BUDGET_MYSQL_DATABASE": "budget_integration",
             "BUDGET_MYSQL_USER": "budget",
             "BUDGET_MYSQL_CREATE_DATABASE": "1",
+            "BUDGET_MYSQL_WAIT_SECONDS": "300",
         }
         cls.compose("up", "-d", "--build")
         cls.wait_for_http("/login", expected_status={200})

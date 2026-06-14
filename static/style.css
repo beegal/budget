@@ -829,9 +829,122 @@ button:hover {
   grid-template-columns: minmax(280px, 1fr) auto;
 }
 
+.summary-filters-chart {
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) auto;
+}
+
 .summary-refresh-button {
   min-width: 38px;
   padding: 8px 10px;
+}
+
+.summary-tabs {
+  margin-bottom: 14px;
+}
+
+.summary-chart {
+  overflow-x: auto;
+  padding: 4px 0 12px;
+  position: relative;
+}
+
+.summary-chart-title {
+  color: var(--accent-strong);
+  font-size: 18px;
+  margin: 20px 0 8px;
+}
+
+.summary-line-chart {
+  display: block;
+  min-width: 680px;
+  width: 100%;
+}
+
+.chart-grid-line {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart-zero-line {
+  stroke: #9aa6b2;
+  stroke-dasharray: 4 4;
+  stroke-width: 1.2;
+}
+
+.chart-series-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+}
+
+.chart-point {
+  cursor: help;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.chart-point-link {
+  cursor: pointer;
+  outline: none;
+}
+
+.chart-point:hover,
+.chart-point:focus {
+  outline: none;
+  r: 7;
+  stroke: var(--accent-soft);
+  stroke-width: 3;
+}
+
+.chart-tooltip {
+  background: #101828;
+  border-radius: 6px;
+  box-shadow: 0 8px 18px rgba(16, 24, 40, .18);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  left: 0;
+  line-height: 1.35;
+  min-width: 150px;
+  padding: 7px 9px;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  transform: translate(-50%, 12px);
+  white-space: pre-line;
+  z-index: 8;
+}
+
+.chart-tooltip::after {
+  border: 5px solid transparent;
+  border-bottom-color: #101828;
+  bottom: 100%;
+  content: "";
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.chart-axis-label,
+.chart-period-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.chart-period-label {
+  text-anchor: middle;
+}
+
+.summary-chart-legend {
+  margin-top: 8px;
+}
+
+.chart-legend-swatch {
+  border-radius: 999px;
+  display: inline-block;
+  height: 9px;
+  margin-right: 8px;
+  width: 20px;
 }
 
 .multi-filter {
@@ -938,6 +1051,20 @@ button:hover {
   width: auto;
 }
 
+.multi-filter-search {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 13px;
+  margin-bottom: 2px;
+  min-height: 30px;
+  padding: 5px 7px;
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 1;
+}
+
 label {
   color: var(--muted);
   display: grid;
@@ -973,6 +1100,15 @@ select {
 
 .profile-panel {
   max-width: 680px;
+}
+
+.tools-panel {
+  max-width: none;
+  overflow: visible;
+}
+
+.tools-panel .profile-form {
+  max-width: 960px;
 }
 
 .profile-form {

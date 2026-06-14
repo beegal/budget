@@ -6,6 +6,7 @@ nav:
   transactions: Transaktionen
   summary: Übersicht
   profile: Profil
+  tools: Werkzeuge
   admin: Admin
   logout: Abmelden
 js:
@@ -32,10 +33,17 @@ js:
 common:
   date: Datum
   label: Bezeichnung
+  labels: Bezeichnungen
   amount: Betrag
   comment: Kommentar
   account: Konto
   total: Summe
+  income: Einnahmen
+  expense: Ausgaben
+  net: Netto
+  all: Alle
+  none-selection: Keine Auswahl
+  remove: Entfernen {name}
 filters:
   label-placeholder: "Bsp.: Einkäufe - Supermarkt"
 parameters:
@@ -98,6 +106,17 @@ profile:
   display-preferences: Anzeigeeinstellungen
   date-format: Datumsanzeigeformat
   number-decimals: Dezimalstellen
+tools:
+  title: Werkzeuge
+  label-merge-title: Kategorien zusammenführen
+  merge-to-label: Zielkategorie
+  merge-from-label: Kategorie zusammenführen und löschen
+  merge-from-placeholder: Kategorien zum Zusammenführen
+  merge-button: Zusammenführen
+  empty-label-message: In den Transaktionen wird keine Kategorie zum Zusammenführen verwendet.
+  source-required: Wähle mindestens eine Kategorie zum Zusammenführen.
+  same-label-error: Wähle zwei verschiedene Kategorien.
+  label-merge-done: Zusammenführung abgeschlossen. {transactions} Transaktion(en), {budgets} Monatsbudget-Eintrag/Einträge und {scheduled} Periodenbudget-Eintrag/Einträge aktualisiert.
 periods:
   open: Öffnen
   create-title: Periode erstellen
@@ -146,3 +165,8 @@ period:
   date-not-recognized: Das Datum dieser Transaktion wurde nicht erkannt.
   date-before-period: "Datum außerhalb der Periode: {date} liegt vor dem Anfang {start}."
   date-after-period: "Datum außerhalb der Periode: {date} liegt nach dem Ende {end}."
+summary:
+  label-filter: Bezeichnungsfilter
+  filter-list: Liste filtern
+  line: Linie
+  sum: Summe

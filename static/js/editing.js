@@ -13,9 +13,9 @@ async function saveCell(element) {
     payload.account_id = element.dataset.accountId;
     payload.field = element.dataset.field;
   } else if (kind === "label") {
-    const row = element.closest("[data-label-id]");
-    payload.id = row.dataset.labelId;
-    payload.field = element.dataset.field;
+    const row = element.closest("[data-label-id], [data-settings-row][data-kind='label']");
+    payload.id = labelRowId(row);
+    payload.field = element.dataset.field || "name";
   } else if (kind === "period-date") {
     payload.id = element.dataset.id;
     payload.field = element.dataset.field;
@@ -407,10 +407,11 @@ async function saveSettingRow(row) {
   const wasNewAccount = kind === "account" && row.dataset.newRow === "true";
   const inputs = settingInputs(row);
   const value = settingRowValue(row, kind);
+  const oldValue = settingRowOriginalValue(row, kind);
   const response = await fetch(`/api/${kind}-row`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: row.dataset.id || null, value }),
+    body: JSON.stringify({ id: settingRowId(row, kind), value }),
   });
   const result = await response.json();
   if (!result.ok) {
@@ -418,6 +419,7 @@ async function saveSettingRow(row) {
     return;
   }
   row.dataset.id = result.id;
+  if (kind === "label") row.dataset.labelId = result.id;
   delete row.dataset.newRow;
   setSettingRowValue(row, kind, result.value);
   const summaryCheckbox = row.querySelector("[data-account-summary]");
@@ -438,7 +440,7 @@ async function saveSettingRow(row) {
     return;
   }
   if (kind === "account") applyAccountIndexes(row.closest("[data-settings-table]"), result.rows || []);
-  if (kind === "label") addLabelName(result.value);
+  if (kind === "label") replaceLabelName(oldValue, result.value);
 }
 
 function settingInputs(row) {
@@ -458,6 +460,22 @@ function settingRowValue(row, kind) {
   const group = row.querySelector('[data-setting-part="group"]')?.value.trim() || "";
   const subcategory = row.querySelector('[data-setting-part="subcategory"]')?.value.trim() || "";
   return subcategory ? `${group} - ${subcategory}` : group;
+}
+
+function settingRowOriginalValue(row, kind) {
+  if (kind !== "label") return row.querySelector("[data-setting-value]")?.dataset.original || "";
+  const group = row.querySelector('[data-setting-part="group"]')?.dataset.original || "";
+  const subcategory = row.querySelector('[data-setting-part="subcategory"]')?.dataset.original || "";
+  return subcategory ? `${group} - ${subcategory}` : group;
+}
+
+function labelRowId(row) {
+  return row?.dataset.labelId || row?.dataset.id || null;
+}
+
+function settingRowId(row, kind) {
+  if (row.dataset.newRow === "true") return null;
+  return kind === "label" ? labelRowId(row) : row.dataset.id || null;
 }
 
 function setSettingRowValue(row, kind, value) {
@@ -511,11 +529,12 @@ async function deleteSettingRow(row) {
     return;
   }
   const inputs = settingInputs(row);
+  const oldValue = settingRowOriginalValue(row, kind);
   setSaveState(state, tr("js.deleting"));
   const response = await fetch(`/api/${kind}-delete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: row.dataset.id }),
+    body: JSON.stringify({ id: settingRowId(row, kind) }),
   });
   const result = await response.json();
   if (!result.ok) {
@@ -524,6 +543,7 @@ async function deleteSettingRow(row) {
     return;
   }
   row.remove();
+  if (kind === "label") removeLabelName(oldValue);
   setSaveState(state, tr("js.deleted"));
 }
 
@@ -1118,6 +1138,16 @@ function addLabelName(name) {
     window.BUDGET_LABELS.push(name);
     window.BUDGET_LABELS.sort((a, b) => a.localeCompare(b, displayLocale()));
   }
+}
+
+function removeLabelName(name) {
+  const oldNeedle = normalized(name);
+  window.BUDGET_LABELS = labelNames().filter((label) => normalized(label) !== oldNeedle);
+}
+
+function replaceLabelName(oldName, newName) {
+  if (oldName) removeLabelName(oldName);
+  addLabelName(newName);
 }
 
 async function createLabelFromPicker(picker) {

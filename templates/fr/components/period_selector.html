@@ -8,7 +8,9 @@
   </div>
   <button type="button" class="multi-filter-toggle" data-multi-filter-toggle>Périodes</button>
   <div class="multi-filter-menu" data-multi-filter-menu hidden>
+    <input class="multi-filter-search" type="text" data-multi-filter-search placeholder="Filtrer la liste">
     <button type="button" class="multi-filter-option" data-multi-filter-all>Toutes</button>
+    <button type="button" class="multi-filter-option" data-multi-filter-none>Aucune sélection</button>
     {% for period in period_selector.periods %}
     <label><input type="checkbox" value="{{ period.id }}" data-multi-filter-checkbox data-multi-name="{{ period.name }}" {% if period.checked %}checked{% endif %}> {{ period.name }}</label>
     {% endfor %}

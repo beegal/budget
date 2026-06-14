@@ -38,8 +38,9 @@ function syncMultiFilter(filter, mode = "explicit") {
   const checkboxes = multiFilterCheckboxes(filter);
   const selectedIds = multiFilterSelectedIds(filter);
   if (hidden) {
-    if (mode === "all" || (checkboxes.length > 0 && selectedIds.length === checkboxes.length)) hidden.value = "all";
-    else if (selectedIds.length === 0) hidden.value = "all";
+    if (mode === "none") hidden.value = "none";
+    else if (mode === "all" || (checkboxes.length > 0 && selectedIds.length === checkboxes.length)) hidden.value = "all";
+    else if (selectedIds.length === 0) hidden.value = filter.dataset.multiEmpty === "none" ? "none" : "all";
     else hidden.value = selectedIds.join(",");
   }
   renderMultiFilterTags(filter);
@@ -59,6 +60,24 @@ function addMultiFilterTag(filter, value) {
   return true;
 }
 
+function filterMultiFilterOptions(filter) {
+  const search = filter?.querySelector("[data-multi-filter-search]");
+  if (!search) return;
+  const needle = normalized(search.value);
+  filter.querySelectorAll("[data-multi-filter-menu] label").forEach((label) => {
+    const checkbox = label.querySelector("[data-multi-filter-checkbox]");
+    const name = checkbox?.dataset.multiName || label.textContent || "";
+    label.hidden = Boolean(needle) && !normalized(name).includes(needle);
+  });
+}
+
+function clearMultiFilterSearch(filter) {
+  const search = filter?.querySelector("[data-multi-filter-search]");
+  if (!search) return;
+  search.value = "";
+  filterMultiFilterOptions(filter);
+}
+
 function markMultiFilterDirty(filter) {
   if (!filter?.closest("form[data-multi-auto-submit]")) return;
   filter.dataset.multiFilterDirty = "true";
@@ -75,6 +94,7 @@ function closeMultiFilter(filter) {
   const menu = filter?.querySelector("[data-multi-filter-menu]");
   if (!menu || menu.hidden) return;
   menu.hidden = true;
+  clearMultiFilterSearch(filter);
   submitMultiFilterIfDirty(filter);
 }
 
@@ -96,4 +116,3 @@ function scheduleFilterSubmit(form) {
   window.clearTimeout(filterSubmitTimer);
   filterSubmitTimer = window.setTimeout(() => submitFilterForm(form), 450);
 }
-

@@ -21,10 +21,6 @@
       <a href="/parameters">Instellingen</a>
       <a href="/transactions">Transacties</a>
       <a href="/summary">Overzicht</a>
-      <a href="/profile">Profiel</a>
-      {% if show_admin %}
-      <a href="/admin">Admin</a>
-      {% endif %}
       <label class="language-selector" title="Taal">
         <span class="language-selector-icon" data-language-selector-icon>{% for language in languages %}{% if language.selected %}{{ language.icon }}{% endif %}{% endfor %}</span>
         <select data-language-selector aria-label="Taal">

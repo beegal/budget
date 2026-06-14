@@ -6,7 +6,7 @@ from components.parameters import account_row, empty_monthly_budget_row, monthly
 from database import db, ensure_internal_transfer_labels
 from i18n import translate
 from transfer_labels import is_internal_transfer_label
-from web_helpers import one, render_template, user_layout
+from web_helpers import one, render_template, settings_tabs_context, user_layout
 
 
 def page(user_id: str) -> bytes:
@@ -59,6 +59,7 @@ def page(user_id: str) -> bytes:
         account_rows=account_rows,
         label_rows=label_rows,
         budget_html=budget_html,
+        **settings_tabs_context(user_id, "parameters"),
     )
     return user_layout(translate("parameters.title"), body, user_id)
 

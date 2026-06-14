@@ -52,7 +52,7 @@ def update(path: str, payload: dict[str, object], user_id: str) -> dict[str, obj
         elif path == "/api/label-row":
             return {"ok": True, **save_label_row(payload, user_id)}
         elif path == "/api/label-delete":
-            delete_named_row("transaction_labels", payload, user_id)
+            delete_label(payload, user_id)
         elif path == "/api/monthly-budget-row":
             return {"ok": True, **save_monthly_budget_row(payload, user_id)}
         elif path == "/api/monthly-budget-delete":
@@ -861,12 +861,25 @@ def save_label_row(payload: dict[str, object], user_id: str) -> dict[str, object
     if row_id:
         with db() as conn:
             row = conn.execute("SELECT name FROM transaction_labels WHERE id = ? AND user_id = ?", (int(row_id), user_id)).fetchone()
-            old_name = row["name"] if row else None
+            if row is None:
+                raise ValueError(translate("errors.label-not-found"))
+            old_name = row["name"]
+            if is_internal_transfer_label(old_name):
+                raise ValueError(translate("errors.label-not-found"))
     result = save_named_row("transaction_labels", payload, user_id)
     if old_name:
         with db() as conn:
             conn.execute("UPDATE transactions SET label = ? WHERE label = ? AND user_id = ?", (result["value"], old_name, user_id))
     return result
+
+
+def delete_label(payload: dict[str, object], user_id: str) -> None:
+    label_id = int(payload["id"])
+    with db() as conn:
+        row = conn.execute("SELECT name FROM transaction_labels WHERE id = ? AND user_id = ?", (label_id, user_id)).fetchone()
+        if row is None or is_internal_transfer_label(row["name"]):
+            raise ValueError(translate("errors.label-not-found"))
+        conn.execute("DELETE FROM transaction_labels WHERE id = ? AND user_id = ?", (label_id, user_id))
 
 
 def delete_named_row(table: str, payload: dict[str, object], user_id: str) -> None:

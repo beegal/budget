@@ -1,8 +1,15 @@
 <section class="page-title"><h1>Synthèse</h1></section>
-<form class="filters summary-filters" method="get" data-multi-auto-submit>
+<nav class="tabs summary-tabs">
+  <a class="tab {% if active_tab == 'table' %}active{% endif %}" href="{{ table_tab_url }}">Chiffres</a>
+  <a class="tab {% if active_tab == 'chart' %}active{% endif %}" href="{{ chart_tab_url }}">Graphique</a>
+</nav>
+<form class="filters summary-filters {% if active_tab == 'chart' %}summary-filters-chart{% endif %}" method="get" data-multi-auto-submit>
+  <input type="hidden" name="tab" value="{{ active_tab }}">
   {% include "components/period_selector.html" %}
+  {% if active_tab == 'chart' %}{% include "components/label_selector.html" %}{% endif %}
   <button class="icon-button summary-refresh-button" title="Rafraîchir" aria-label="Rafraîchir">↻</button>
 </form>
+{% if active_tab == 'table' %}
 <section class="panel">
   <h2>Entrées / sorties par intitulé</h2>
   <table class="overview-table">
@@ -31,3 +38,16 @@
     {% endif %}
   </table>
 </section>
+{% else %}
+<section class="panel">
+  <h2>Graphique par période</h2>
+  {% if chart.has_data %}
+  {% for graph in chart.graphs %}
+  <h3 class="summary-chart-title">{{ graph.title }}</h3>
+  {% include "components/summary_chart_graph.html" %}
+  {% endfor %}
+  {% else %}
+  <p>Aucune transaction.</p>
+  {% endif %}
+</section>
+{% endif %}

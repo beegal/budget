@@ -18,7 +18,32 @@ function cancelAdminUserCreateRow(button) {
   if (addRow) addRow.hidden = false;
 }
 
+function showChartTooltip(point) {
+  const chart = point?.closest(".summary-chart");
+  const tooltip = chart?.querySelector("[data-chart-tooltip]");
+  if (!chart || !tooltip) return;
+  tooltip.textContent = point.dataset.tooltip || "";
+  tooltip.hidden = false;
+  positionChartTooltip(point, tooltip, chart);
+}
+
+function positionChartTooltip(point, tooltip, chart) {
+  const pointRect = point.getBoundingClientRect();
+  const chartRect = chart.getBoundingClientRect();
+  const left = pointRect.left - chartRect.left + pointRect.width / 2;
+  const top = pointRect.top - chartRect.top;
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function hideChartTooltip(point) {
+  const tooltip = point?.closest(".summary-chart")?.querySelector("[data-chart-tooltip]");
+  if (tooltip) tooltip.hidden = true;
+}
+
 document.addEventListener("focusin", (event) => {
+  const chartPoint = event.target.closest("[data-chart-point]");
+  if (chartPoint) showChartTooltip(chartPoint);
   const editable = event.target.closest("[contenteditable][data-save]");
   if (editable) editable.dataset.before = editable.textContent.trim();
   const input = event.target.closest("input[data-save]");
@@ -41,6 +66,8 @@ document.addEventListener("focusin", (event) => {
 });
 
 document.addEventListener("focusout", (event) => {
+  const chartPoint = event.target.closest("[data-chart-point]");
+  if (chartPoint) hideChartTooltip(chartPoint);
   const editable = event.target.closest("[contenteditable][data-save]");
   if (editable) {
     if (editable.closest("[data-transaction-table]")) {
@@ -95,7 +122,12 @@ document.addEventListener("keydown", async (event) => {
   const budgetScheduleInput = event.target.closest("[data-budget-schedule-field], [data-budget-schedule-new-row] [data-label-input]");
   const accountBalanceInput = event.target.closest("[data-balance-input]");
   const multiTagInput = event.target.closest("[data-multi-tag-input]");
+  const multiFilterSearch = event.target.closest("[data-multi-filter-search]");
 
+  if (event.key === "Enter" && multiFilterSearch) {
+    event.preventDefault();
+    return;
+  }
   if ((event.key === "Enter" || event.key === ",") && multiTagInput) {
     event.preventDefault();
     const filter = multiTagInput.closest("[data-multi-filter]");
@@ -316,6 +348,11 @@ document.addEventListener("input", (event) => {
     const added = parts.map((part) => addMultiFilterTag(filter, part)).some(Boolean);
     if (added) markMultiFilterDirty(filter);
   }
+  const multiFilterSearch = event.target.closest("[data-multi-filter-search]");
+  if (multiFilterSearch) {
+    filterMultiFilterOptions(multiFilterSearch.closest("[data-multi-filter]"));
+    return;
+  }
   const budgetScheduleInput = event.target.closest("[data-budget-schedule-field]");
   if (budgetScheduleInput) budgetScheduleInput.closest("tr")?.classList.add("dirty");
   const transactionCell = event.target.closest('[data-transaction-table] [data-save="transaction"]');
@@ -331,6 +368,16 @@ document.addEventListener("mousedown", (event) => {
   if (event.target.closest("[data-label-suggestions]") || event.target.closest("[data-create-label]")) {
     event.preventDefault();
   }
+});
+
+document.addEventListener("pointerover", (event) => {
+  const chartPoint = event.target.closest("[data-chart-point]");
+  if (chartPoint) showChartTooltip(chartPoint);
+});
+
+document.addEventListener("pointerout", (event) => {
+  const chartPoint = event.target.closest("[data-chart-point]");
+  if (chartPoint) hideChartTooltip(chartPoint);
 });
 
 document.addEventListener("dragstart", (event) => {
@@ -412,7 +459,11 @@ document.addEventListener("click", async (event) => {
     if (menu && !menu.hidden) closeMultiFilter(filter);
     else {
       closeOpenMultiFilters(filter);
-      if (menu) menu.hidden = false;
+      if (menu) {
+        menu.hidden = false;
+        const search = filter.querySelector("[data-multi-filter-search]");
+        if (search) search.focus();
+      }
     }
     return;
   }
@@ -438,7 +489,7 @@ document.addEventListener("click", async (event) => {
     multiFilterCheckboxes(filter).forEach((checkbox) => {
       checkbox.checked = false;
     });
-    syncMultiFilter(filter);
+    syncMultiFilter(filter, "none");
     markMultiFilterDirty(filter);
     return;
   }

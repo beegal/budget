@@ -7,7 +7,7 @@ from user_preferences import (
     normalize_date_format,
     normalize_number_decimals,
 )
-from web_helpers import one, render_template, user_layout
+from web_helpers import one, render_template, settings_tabs_context, user_layout
 
 
 DATE_FORMAT_OPTIONS = [
@@ -30,6 +30,7 @@ def page(user_id: str) -> bytes:
             }
             for option in DATE_FORMAT_OPTIONS
         ],
+        **settings_tabs_context(user_id, "profile"),
     )
     return user_layout(translate("profile.title"), body, user_id)
 

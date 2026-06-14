@@ -16,7 +16,7 @@ import auth
 import budget_cli
 import database
 from database import db
-from endpoints import admin, api, imports, parameters, period, periods, profile, static_files, summary, transactions
+from endpoints import admin, api, imports, parameters, period, periods, profile, static_files, summary, tools, transactions
 from i18n import preferred_language, translate, use_language
 from security import max_upload_bytes, only_https, validate_same_origin
 from user_preferences import ensure_user_preferences, use_preferences
@@ -139,6 +139,39 @@ def profile_page(request: Request, user: auth.User | None = Depends(auth.optiona
     uid = user_id(user)
     with request_context(uid, request):
         return html(profile.page(uid))
+
+
+@application.get("/tools", response_class=HTMLResponse, response_model=None)
+def tools_page(request: Request, user: auth.User | None = Depends(auth.optional_current_user)) -> Response:
+    if user is None:
+        return redirect("/login")
+    uid = user_id(user)
+    with request_context(uid, request):
+        return html(tools.page(uid, query_string(request)))
+
+
+@application.get("/tools/labels/defined", response_model=None)
+def tools_defined_labels(user: auth.User = Depends(auth.current_active_user)) -> JSONResponse:
+    with db() as conn:
+        labels = tools.labels_payload(tools.defined_labels(conn, user_id(user)))
+    return JSONResponse({"labels": labels})
+
+
+@application.get("/tools/labels/used", response_model=None)
+def tools_used_labels(user: auth.User = Depends(auth.current_active_user)) -> JSONResponse:
+    with db() as conn:
+        labels = tools.labels_payload(tools.used_labels(conn, user_id(user)))
+    return JSONResponse({"labels": labels})
+
+
+@application.post("/tools/labels/merge", response_model=None)
+async def tools_merge_labels(request: Request, user: auth.User = Depends(auth.current_active_user)) -> RedirectResponse:
+    uid = user_id(user)
+    with request_context(uid, request):
+        try:
+            return redirect(tools.merge_labels(await form_data(request), uid))
+        except ValueError as error:
+            return redirect(f"/tools?error={quote(str(error))}")
 
 
 @application.post("/profile", response_model=None)

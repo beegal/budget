@@ -6,6 +6,7 @@ nav:
   transactions: Transactions
   summary: Summary
   profile: Profile
+  tools: Tools
   admin: Admin
   logout: Logout
 js:
@@ -32,10 +33,17 @@ js:
 common:
   date: Date
   label: Label
+  labels: Labels
   amount: Amount
   comment: Comment
   account: Account
   total: Total
+  income: Income
+  expense: Expenses
+  net: Net
+  all: All
+  none-selection: No selection
+  remove: Remove {name}
 filters:
   label-placeholder: "Ex: Groceries - Supermarket"
 parameters:
@@ -98,6 +106,17 @@ profile:
   display-preferences: Display preferences
   date-format: Date display format
   number-decimals: Number decimals
+tools:
+  title: Tools
+  label-merge-title: Label merge
+  merge-to-label: Destination label
+  merge-from-label: Label to merge and delete
+  merge-from-placeholder: Labels to merge
+  merge-button: Merge
+  empty-label-message: No label is currently used by transactions to merge.
+  source-required: Select at least one label to merge.
+  same-label-error: Choose two different labels.
+  label-merge-done: Merge complete. {transactions} transaction(s), {budgets} monthly budget entrie(s), and {scheduled} period budget entrie(s) updated.
 periods:
   open: Open
   create-title: Create period
@@ -146,3 +165,8 @@ period:
   date-not-recognized: This transaction date is not recognized.
   date-before-period: "Out-of-period date: {date} is before the start {start}."
   date-after-period: "Out-of-period date: {date} is after the end {end}."
+summary:
+  label-filter: Label filter
+  filter-list: Filter list
+  line: Line
+  sum: Sum

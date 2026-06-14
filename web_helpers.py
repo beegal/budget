@@ -164,19 +164,36 @@ def layout(title: str, body: str) -> bytes:
 
 
 def user_layout(title: str, body: str, user_id: str) -> bytes:
-    from database import db
-
-    with db() as conn:
-        row = conn.execute("SELECT is_superuser FROM users WHERE id = ?", (user_id,)).fetchone()
     frontend_config = {**current_preferences().as_frontend_config(), "language": current_language(), "locale": current_language_locale_tag()}
     return render_template(
         "layout.html",
         title=title,
         body=body,
         authenticated=True,
-        show_admin=bool(row and row["is_superuser"]),
+        show_admin=user_is_admin(user_id),
         html_lang=current_language(),
         frontend_config=json.dumps(frontend_config, ensure_ascii=False),
         frontend_i18n=json.dumps(frontend_messages(), ensure_ascii=False),
         languages=language_options(),
     ).encode("utf-8")
+
+
+def user_is_admin(user_id: str) -> bool:
+    from database import db
+
+    with db() as conn:
+        row = conn.execute("SELECT is_superuser FROM users WHERE id = ?", (user_id,)).fetchone()
+    return bool(row and row["is_superuser"])
+
+
+def settings_tabs_context(user_id: str, active: str) -> dict[str, object]:
+    return {
+        "settings_active": active,
+        "settings_show_admin": user_is_admin(user_id),
+        "settings_tabs": {
+            "parameters": translate("nav.parameters"),
+            "profile": translate("nav.profile"),
+            "tools": translate("nav.tools"),
+            "admin": translate("nav.admin"),
+        },
+    }

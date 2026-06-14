@@ -1,0 +1,8 @@
+<nav class="tabs settings-tabs" aria-label="{{ settings_tabs.parameters }}">
+  <a class="tab{% if settings_active == 'parameters' %} active{% endif %}" href="/parameters">{{ settings_tabs.parameters }}</a>
+  <a class="tab{% if settings_active == 'profile' %} active{% endif %}" href="/profile">{{ settings_tabs.profile }}</a>
+  <a class="tab{% if settings_active == 'tools' %} active{% endif %}" href="/tools">{{ settings_tabs.tools }}</a>
+  {% if settings_show_admin %}
+  <a class="tab{% if settings_active == 'admin' %} active{% endif %}" href="/admin">{{ settings_tabs.admin }}</a>
+  {% endif %}
+</nav>

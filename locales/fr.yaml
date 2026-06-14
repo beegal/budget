@@ -6,6 +6,7 @@ nav:
   transactions: Transactions
   summary: Synthèse
   profile: Profil
+  tools: Outils
   admin: Admin
   logout: Déconnexion
 common:
@@ -30,6 +31,8 @@ common:
   net: Net
   income: Entrées
   expense: Sorties
+  all: Tous
+  none-selection: Aucune sélection
   all-feminine: Toutes
   all-masculine: Tous
   remove: Retirer {name}
@@ -48,6 +51,17 @@ profile:
   display-preferences: Préférences d'affichage
   date-format: Format d'affichage des dates
   number-decimals: Décimales des nombres
+tools:
+  title: Outils
+  label-merge-title: Fusion d'intitulés
+  merge-to-label: Intitulé destination
+  merge-from-label: Intitulé à merger et supprimer
+  merge-from-placeholder: Intitulés à merger
+  merge-button: Fusionner
+  empty-label-message: Aucun intitulé utilisé dans les transactions pour faire une fusion.
+  source-required: Sélectionne au moins un intitulé à merger.
+  same-label-error: Choisis deux intitulés différents.
+  label-merge-done: Fusion terminée. {transactions} transaction(s), {budgets} entrée(s) de budget mensuel et {scheduled} entrée(s) de budget de période mises à jour.
 parameters:
   title: Paramètres
   account: Compte
@@ -119,6 +133,10 @@ summary:
   title: Synthèse
   by-label: Entrées / sorties par intitulé
   grouped-label-tooltip: Regroupé par le texte avant "-".
+  label-filter: Filtre intitulés
+  filter-list: Filtrer la liste
+  line: Ligne
+  sum: Somme
 imports:
   title: Import CSV
   valid-dates: Dates valides

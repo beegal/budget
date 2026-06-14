@@ -8,7 +8,7 @@ from fastapi_users.password import PasswordHelper
 import database
 from database import db
 from i18n import translate
-from web_helpers import one, render_template, user_layout
+from web_helpers import one, render_template, settings_tabs_context, user_layout
 
 
 password_helper = PasswordHelper()
@@ -38,6 +38,7 @@ def page(current_user_id: str, query: str = "") -> bytes:
         users=users,
         current_user_id=current_user_id,
         error=params.get("error", [""])[0],
+        **settings_tabs_context(current_user_id, "admin"),
     )
     return user_layout(translate("admin.title"), body, current_user_id)
 

@@ -1,0 +1,34 @@
+<div class="summary-chart">
+  <svg class="summary-line-chart" viewBox="0 0 {{ graph.view.width }} {{ graph.view.height }}" role="img" aria-label="{{ graph.title }}">
+    <line class="chart-grid-line" x1="{{ graph.view.left }}" y1="{{ graph.view.top }}" x2="{{ graph.view.width - graph.view.right }}" y2="{{ graph.view.top }}"></line>
+    <line class="chart-grid-line" x1="{{ graph.view.left }}" y1="{{ graph.view.height - graph.view.bottom }}" x2="{{ graph.view.width - graph.view.right }}" y2="{{ graph.view.height - graph.view.bottom }}"></line>
+    <line class="chart-zero-line" x1="{{ graph.view.left }}" y1="{{ graph.view.zero_y }}" x2="{{ graph.view.width - graph.view.right }}" y2="{{ graph.view.zero_y }}"></line>
+    <text class="chart-axis-label" x="4" y="{{ graph.view.top + 4 }}">{{ graph.view.max_label }}</text>
+    <text class="chart-axis-label" x="4" y="{{ graph.view.height - graph.view.bottom + 4 }}">{{ graph.view.min_label }}</text>
+    {% for series in graph.view.series %}
+    {% for segment in series.line_segments %}
+    <polyline class="chart-series-line" points="{{ segment }}" fill="none" stroke="{{ series.color }}"></polyline>
+    {% endfor %}
+    {% for point in series.point_views %}
+    <a class="chart-point-link" href="{{ point.href }}" aria-label="{{ point.tooltip }}">
+      <circle class="chart-point" cx="{{ point.x }}" cy="{{ point.y }}" r="5" fill="{{ series.color }}" tabindex="0" data-chart-point data-tooltip="{{ point.tooltip }}"></circle>
+    </a>
+    {% endfor %}
+    {% endfor %}
+    {% for period in graph.view.periods %}
+    <text class="chart-period-label" x="{{ period.x }}" y="{{ graph.view.height - 16 }}">{{ period.name }}</text>
+    {% endfor %}
+  </svg>
+  <div class="chart-tooltip" data-chart-tooltip hidden></div>
+</div>
+<table class="overview-table summary-chart-legend">
+  <thead><tr><th>{{ t("summary.line") }}</th><th class="num">{{ t("summary.sum") }}</th></tr></thead>
+  <tbody>
+    {% for series in graph.view.series %}
+    <tr>
+      <td><span class="chart-legend-swatch" style="background: {{ series.color }}"></span><a href="{{ series.href }}">{{ series.name }}</a></td>
+      <td class="num {{ series.sum_class }}">{{ series.sum }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

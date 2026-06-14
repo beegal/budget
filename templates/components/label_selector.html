@@ -1,0 +1,18 @@
+<div class="multi-filter label-selector-filter" data-multi-filter{% if label_selector.empty_mode %} data-multi-empty="{{ label_selector.empty_mode }}"{% endif %}>
+  <input type="hidden" name="{{ label_selector.name | default('labels') }}" value="{{ label_selector.value }}" data-multi-filter-value>
+  <div class="multi-tag-box" data-multi-tag-box>
+    {% for tag in label_selector.tags %}
+    <span class="multi-filter-tag" data-multi-tag="{{ tag.id }}">{{ tag.name }}<button type="button" data-multi-tag-remove aria-label="{{ label_selector.remove_label.format(name=tag.name) }}">x</button></span>
+    {% endfor %}
+    <input type="text" data-multi-tag-input placeholder="{{ label_selector.placeholder }}">
+  </div>
+  <button type="button" class="multi-filter-toggle" data-multi-filter-toggle>{{ label_selector.toggle_label }}</button>
+  <div class="multi-filter-menu" data-multi-filter-menu hidden>
+    <input class="multi-filter-search" type="text" data-multi-filter-search placeholder="{{ label_selector.search_placeholder }}">
+    <button type="button" class="multi-filter-option" data-multi-filter-all>{{ label_selector.all_label }}</button>
+    <button type="button" class="multi-filter-option" data-multi-filter-none>{{ label_selector.none_label }}</button>
+    {% for option in label_selector.options %}
+    <label><input type="checkbox" value="{{ option.id }}" data-multi-filter-checkbox data-multi-name="{{ option.name }}" {% if option.checked %}checked{% endif %}> {{ option.name }}</label>
+    {% endfor %}
+  </div>
+</div>
