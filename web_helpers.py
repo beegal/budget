@@ -148,6 +148,8 @@ def transaction_filter_url(period_ids: list[int], label: str) -> str:
 
 
 def layout(title: str, body: str) -> bytes:
+    from components.common import icon
+
     preferences = current_preferences()
     frontend_config = {**preferences.as_frontend_config(), "language": current_language(), "locale": current_language_locale_tag()}
     return render_template(
@@ -160,10 +162,15 @@ def layout(title: str, body: str) -> bytes:
         frontend_config=json.dumps(frontend_config, ensure_ascii=False),
         frontend_i18n=json.dumps(frontend_messages(), ensure_ascii=False),
         languages=language_options(),
+        settings_menu_label=translate("nav.parameters-tools"),
+        setup_icon=icon("setup"),
+        logout_icon=icon("logout"),
     ).encode("utf-8")
 
 
 def user_layout(title: str, body: str, user_id: str) -> bytes:
+    from components.common import icon
+
     frontend_config = {**current_preferences().as_frontend_config(), "language": current_language(), "locale": current_language_locale_tag()}
     return render_template(
         "layout.html",
@@ -175,6 +182,9 @@ def user_layout(title: str, body: str, user_id: str) -> bytes:
         frontend_config=json.dumps(frontend_config, ensure_ascii=False),
         frontend_i18n=json.dumps(frontend_messages(), ensure_ascii=False),
         languages=language_options(),
+        settings_menu_label=translate("nav.parameters-tools"),
+        setup_icon=icon("setup"),
+        logout_icon=icon("logout"),
     ).encode("utf-8")
 
 

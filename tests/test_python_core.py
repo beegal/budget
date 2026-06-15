@@ -13,6 +13,7 @@ import database
 import security
 from endpoints.api import delete_label, ensure_transaction_label, save_label_row, sync_internal_transfer
 from endpoints.filters import parse_period_ids
+from endpoints.imports import export_csv
 from endpoints.summary import chart_summary_rows, parse_label_groups, summary_chart_view
 from endpoints.tools import defined_labels, encode_label, labels_payload, merge_labels, used_labels
 from i18n import frontend_messages, preferred_language, translate, use_language
@@ -308,6 +309,10 @@ class ToolsTests(unittest.TestCase):
             (user_id, 1, 1, "2026-01-05", "Food - Old", -10),
         )
         conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, comment) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, 1, 1, "2026-01-06", "Food - Old", -20, "already checked"),
+        )
+        conn.execute(
             "INSERT INTO monthly_budget(user_id, day, label, amount) VALUES (?, ?, ?, ?)",
             (user_id, 1, "Food - Old", -100),
         )
@@ -323,7 +328,10 @@ class ToolsTests(unittest.TestCase):
             )
 
         self.assertTrue(redirect.startswith("/tools?message="))
-        self.assertEqual(conn.execute("SELECT label FROM transactions").fetchone()["label"], "Food - New")
+        rows = conn.execute("SELECT label, comment FROM transactions ORDER BY date").fetchall()
+        self.assertEqual([row["label"] for row in rows], ["Food - New", "Food - New"])
+        self.assertEqual(rows[0]["comment"], "moved from Food - Old")
+        self.assertEqual(rows[1]["comment"], "already checked moved from Food - Old")
         self.assertEqual(conn.execute("SELECT label FROM monthly_budget").fetchone()["label"], "Food - New")
         self.assertEqual(conn.execute("SELECT label FROM budget_schedule").fetchone()["label"], "Food - New")
         self.assertIsNone(conn.execute("SELECT id FROM transaction_labels WHERE name = ?", ("Food - Old",)).fetchone())
@@ -416,6 +424,85 @@ class ToolsTests(unittest.TestCase):
 
         self.assertEqual(conn.execute("SELECT label FROM transactions").fetchone()["label"], "Historical - Fixed")
         self.assertIsNotNone(conn.execute("SELECT id FROM transaction_labels WHERE name = ?", ("Historical - Fixed",)).fetchone())
+
+
+class PersonalBudgetImportTests(unittest.TestCase):
+    def test_personal_budget_import_targets_current_user_schema(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "user-1"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "u@example.test", "x"))
+        sheet = budget_cli.WorkbookSheet(
+            "Jan-Feb",
+            {
+                1: {0: "du 01/01 -> 31/01"},
+                2: {2: "cash"},
+                3: {0: "Compte", 1: "Debut", 2: "Date", 3: "Intitulé", 4: "Montant"},
+                4: {0: "cash", 1: "10,5", 2: "2026-01-05", 3: "food - old", 4: "-12,3"},
+            },
+        )
+
+        summary = budget_cli.import_personal_budget_sheets(conn, [sheet], user_id)
+
+        self.assertEqual(summary["periods"], 1)
+        self.assertEqual(summary["transactions"], 1)
+        period = conn.execute("SELECT user_id, name, start_date, end_date FROM period").fetchone()
+        self.assertEqual(
+            dict(period),
+            {"user_id": user_id, "name": "Jan-Feb", "start_date": "2026-01-01", "end_date": "2026-01-31"},
+        )
+        account = conn.execute("SELECT user_id, name, visible_if_empty FROM accounts").fetchone()
+        self.assertEqual(dict(account), {"user_id": user_id, "name": "Cash", "visible_if_empty": 1})
+        labels = {
+            (row["user_id"], row["name"])
+            for row in conn.execute("SELECT user_id, name FROM transaction_labels").fetchall()
+        }
+        self.assertIn((user_id, "Food - Old"), labels)
+        self.assertIn((user_id, "Virement Interne - Cash"), labels)
+        transaction = conn.execute("SELECT user_id, date, label, amount FROM transactions").fetchone()
+        self.assertEqual(dict(transaction), {"user_id": user_id, "date": "2026-01-05", "label": "Food - Old", "amount": -12.3})
+        balance = conn.execute("SELECT user_id, opening FROM account_balances").fetchone()
+        self.assertEqual(dict(balance), {"user_id": user_id, "opening": 10.5})
+
+
+class CsvExportTests(unittest.TestCase):
+    def test_export_csv_uses_import_format_columns(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "user-1"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "u@example.test", "x"))
+        conn.execute(
+            "INSERT INTO period(id, user_id, name, start_date, end_date) VALUES (?, ?, ?, ?, ?)",
+            (1, user_id, "Jan", "2026-01-01", "2026-01-31"),
+        )
+        conn.execute("INSERT INTO accounts(id, user_id, name, sort_index) VALUES (?, ?, ?, ?)", (2, user_id, "Cash", 1))
+        conn.execute(
+            """
+            INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, sort_index, comment)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, 1, 2, "2026-01-05", "Food - Old", -12.3, 2, "note"),
+        )
+        conn.execute(
+            """
+            INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, sort_index, comment)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, 1, 2, "2026-01-04", "Salary", 100, 1, ""),
+        )
+
+        exported = export_csv(conn, 1, 2, "mdy", "csv_header", user_id)
+
+        self.assertEqual(
+            exported.splitlines(),
+            [
+                "Date,Intitulé,Montant,Commentaire",
+                "01/04/2026,Salary,100.00,",
+                "01/05/2026,Food - Old,-12.30,note",
+            ],
+        )
 
 
 @contextmanager

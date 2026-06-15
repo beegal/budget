@@ -18,7 +18,6 @@
     {% if authenticated %}
     <nav>
       <a href="/">Perioden</a>
-      <a href="/parameters">Einstellungen</a>
       <a href="/transactions">Transaktionen</a>
       <a href="/summary">Übersicht</a>
       <label class="language-selector" title="Sprache">
@@ -29,7 +28,8 @@
           {% endfor %}
         </select>
       </label>
-      <form class="logout-form" method="post" action="/logout"><button type="submit" class="link-button">Abmelden</button></form>
+      <a class="nav-icon-link" href="/parameters" title="{{ settings_menu_label }}" aria-label="{{ settings_menu_label }}">{{ setup_icon | safe }}</a>
+      <form class="logout-form" method="post" action="/logout"><button type="submit" class="nav-icon-button" title="Abmelden" aria-label="Abmelden">{{ logout_icon | safe }}</button></form>
     </nav>
     {% endif %}
     {% if not authenticated %}

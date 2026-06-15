@@ -3,6 +3,7 @@ app:
 nav:
   periods: Periods
   parameters: Settings
+  parameters-tools: Settings and tools
   transactions: Transactions
   summary: Summary
   profile: Profile

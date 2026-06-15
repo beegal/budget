@@ -3,6 +3,7 @@ app:
 nav:
   periods: Périodes
   parameters: Paramètres
+  parameters-tools: Paramètres et outils
   transactions: Transactions
   summary: Synthèse
   profile: Profil
@@ -139,6 +140,7 @@ summary:
   sum: Somme
 imports:
   title: Import CSV
+  export-title: Export CSV
   valid-dates: Dates valides
   date-format: Format de date
   format: Format
@@ -147,6 +149,7 @@ imports:
   tsv-header: TSV avec en-tête
   tsv-no-header: TSV sans en-tête
   data-to-import: Données à importer
+  data-to-export: Données à exporter
   validation: Validation
   importation: Importation
   file-to-import: Fichier à importer

@@ -257,6 +257,7 @@ def account_tab_view(
         "plus_icon": icon("plus"),
         "clear_icon": icon("clear-list"),
         "upload_icon": icon("upload"),
+        "download_icon": icon("download"),
     }
 
 

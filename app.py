@@ -110,6 +110,19 @@ def import_page(
         return html(imports.page(period_id, query_string(request), uid))
 
 
+@application.get("/period/{period_id}/export", response_class=HTMLResponse, response_model=None)
+def export_page(
+    period_id: int,
+    request: Request,
+    user: auth.User | None = Depends(auth.optional_current_user),
+) -> Response:
+    if user is None:
+        return redirect("/login")
+    uid = user_id(user)
+    with request_context(uid, request):
+        return html(imports.export_page(period_id, query_string(request), uid))
+
+
 @application.get("/period/{period_id}", response_class=HTMLResponse, response_model=None)
 def period_page(
     period_id: int,
@@ -310,6 +323,16 @@ async def import_submit(period_id: int, request: Request, user: auth.User = Depe
     uid = user_id(user)
     with request_context(uid, request):
         result = imports.submit(period_id, await form_data(request), uid)
+    if isinstance(result, bytes):
+        return html(result)
+    return redirect(result)
+
+
+@application.post("/period/{period_id}/export", response_model=None)
+async def export_submit(period_id: int, request: Request, user: auth.User = Depends(auth.current_active_user)) -> Response:
+    uid = user_id(user)
+    with request_context(uid, request):
+        result = imports.export_submit(period_id, await form_data(request), uid)
     if isinstance(result, bytes):
         return html(result)
     return redirect(result)

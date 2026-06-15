@@ -61,6 +61,39 @@ nav {
   gap: 14px;
 }
 
+.nav-icon-link,
+.nav-icon-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--accent);
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  min-height: 0;
+  padding: 0;
+  width: 32px;
+}
+
+.nav-icon-link:hover,
+.nav-icon-button:hover {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+
+.nav-icon-link svg,
+.nav-icon-button svg {
+  fill: none;
+  height: 18px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  width: 18px;
+}
+
 .logout-form {
   margin: 0;
 }

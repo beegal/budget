@@ -127,10 +127,24 @@ def merge_labels(data: dict[str, list[str]], user_id: str) -> str:
             f"SELECT COUNT(*) FROM budget_schedule WHERE user_id = ? AND label IN ({name_placeholders})",
             (user_id, *source_names),
         ).fetchone()[0]
-        conn.execute(
-            f"UPDATE transactions SET label = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND label IN ({name_placeholders})",
-            (destination_name, user_id, *source_names),
-        )
+        for source_name in source_names:
+            merge_note = f"moved from {source_name}"
+            rows = conn.execute(
+                """
+                SELECT id, comment
+                FROM transactions
+                WHERE user_id = ?
+                  AND label = ?
+                """,
+                (user_id, source_name),
+            ).fetchall()
+            for row in rows:
+                current_comment = str(row["comment"] or "").strip()
+                new_comment = f"{current_comment} {merge_note}".strip()
+                conn.execute(
+                    "UPDATE transactions SET label = ?, comment = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+                    (destination_name, new_comment, row["id"], user_id),
+                )
         conn.execute(
             f"UPDATE monthly_budget SET label = ? WHERE user_id = ? AND label IN ({name_placeholders})",
             (destination_name, user_id, *source_names),

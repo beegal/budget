@@ -34,7 +34,24 @@ def page(period_id: int, query: str, user_id: str) -> bytes:
         ).fetchone() if account_id else None
     if period is None or account is None:
         return user_layout(translate("imports.title"), panel_message(translate("imports.title")), user_id)
-    return page_html(period, account, "", default_date_format(), "csv_header")
+    return page_html(period, account, "", default_date_format(), "csv_header", mode="import")
+
+
+def export_page(period_id: int, query: str, user_id: str) -> bytes:
+    params = parse_qs(query)
+    account_id = params.get("account", [""])[0]
+    date_format = params.get("date_format", [default_date_format()])[0]
+    format_value = params.get("format", ["csv_header"])[0]
+    with db() as conn:
+        period = conn.execute("SELECT * FROM period WHERE id = ? AND user_id = ?", (period_id, user_id)).fetchone()
+        account = conn.execute(
+            "SELECT * FROM accounts WHERE id = ? AND user_id = ?",
+            (account_id, user_id),
+        ).fetchone() if account_id else None
+        raw_csv = export_csv(conn, period_id, int(account_id), date_format, format_value, user_id) if period and account else ""
+    if period is None or account is None:
+        return user_layout(translate("imports.title"), panel_message(translate("imports.title")), user_id)
+    return page_html(period, account, raw_csv, date_format, format_value, mode="export")
 
 
 def page_html(
@@ -44,10 +61,20 @@ def page_html(
     date_format: str = "dmy",
     format_value: str = "csv_header",
     validation: dict[str, object] | None = None,
+    mode: str = "import",
 ) -> bytes:
     period_id = period["id"]
+    is_export = mode == "export"
     body = render_template(
         "imports.html",
+        page_title=translate("imports.export-title") if is_export else translate("imports.title"),
+        form_action=f"/period/{period_id}/export" if is_export else f"/period/{period_id}/import",
+        textarea_name="csv_export" if is_export else "csv_import",
+        textarea_label=translate("imports.data-to-export") if is_export else translate("imports.data-to-import"),
+        textarea_placeholder=export_placeholder(date_format, format_value),
+        primary_action="export" if is_export else "validate",
+        primary_label=translate("common.export") if is_export else translate("imports.validation"),
+        show_validation=not is_export,
         period_label=period_label(period),
         period_id=period_id,
         account_id=account["id"],
@@ -79,7 +106,7 @@ def submit(period_id: int, data: dict[str, list[str]], user_id: str) -> str | by
         return "/"
     validation = validate_csv(period_id, raw_csv, date_format, format_value, user_id)
     if action != "import" or validation["problem_count"]:
-        return page_html(period, account, raw_csv, date_format, format_value, validation)
+        return page_html(period, account, raw_csv, date_format, format_value, validation, mode="import")
     for row in validation["rows"]:
         result = api.update(
             "/api/transaction-row",
@@ -98,6 +125,22 @@ def submit(period_id: int, data: dict[str, list[str]], user_id: str) -> str | by
     return f"/period/{period_id}?account={account_id}"
 
 
+def export_submit(period_id: int, data: dict[str, list[str]], user_id: str) -> str | bytes:
+    account_id = (data.get("account_id") or [""])[0]
+    date_format = (data.get("date_format") or [default_date_format()])[0]
+    format_value = (data.get("format") or ["csv_header"])[0]
+    with db() as conn:
+        period = conn.execute("SELECT * FROM period WHERE id = ? AND user_id = ?", (period_id, user_id)).fetchone()
+        account = conn.execute(
+            "SELECT * FROM accounts WHERE id = ? AND user_id = ?",
+            (account_id, user_id),
+        ).fetchone() if account_id else None
+        raw_csv = export_csv(conn, period_id, int(account_id), date_format, format_value, user_id) if period and account else ""
+    if period is None or account is None:
+        return "/"
+    return page_html(period, account, raw_csv, date_format, format_value, mode="export")
+
+
 def csv_rows(raw_csv: str, format_value: str = "csv_header") -> list[list[str]]:
     delimiter = "\t" if format_value.startswith("tsv") else ","
     reader = csv.reader(StringIO(raw_csv), delimiter=delimiter)
@@ -105,6 +148,59 @@ def csv_rows(raw_csv: str, format_value: str = "csv_header") -> list[list[str]]:
     if rows and format_value in {"csv_header", "tsv_header"}:
         rows = rows[1:]
     return rows
+
+
+def export_csv(
+    conn: sqlite3.Connection,
+    period_id: int,
+    account_id: int,
+    date_format: str,
+    format_value: str,
+    user_id: str,
+) -> str:
+    delimiter = "\t" if format_value.startswith("tsv") else ","
+    include_header = format_value in {"csv_header", "tsv_header"}
+    output = StringIO()
+    writer = csv.writer(output, delimiter=delimiter, lineterminator="\n")
+    if include_header:
+        writer.writerow([translate("common.date"), translate("common.label"), translate("common.amount"), translate("common.comment")])
+    rows = conn.execute(
+        """
+        SELECT date, label, amount, comment
+        FROM transactions
+        WHERE user_id = ? AND period_id = ? AND account_id = ?
+        ORDER BY sort_index, id
+        """,
+        (user_id, period_id, account_id),
+    ).fetchall()
+    for row in rows:
+        writer.writerow(
+            [
+                export_date(row["date"], date_format),
+                row["label"] or "",
+                format(float(row["amount"] or 0), ".2f"),
+                row["comment"] or "",
+            ]
+        )
+    return output.getvalue().rstrip("\n")
+
+
+def export_date(value: str, date_format: str) -> str:
+    parsed = date.fromisoformat(value)
+    if date_format == "mdy":
+        return parsed.strftime("%m/%d/%Y")
+    if date_format == "ymd":
+        return parsed.strftime("%Y-%m-%d")
+    return parsed.strftime("%d/%m/%Y")
+
+
+def export_placeholder(date_format: str, format_value: str) -> str:
+    delimiter = "\t" if format_value.startswith("tsv") else ","
+    date_examples = {"dmy": "26/03/2026", "mdy": "03/26/2026", "ymd": "2026-03-26"}
+    row = [date_examples.get(date_format, date_examples["dmy"]), "Exemple", "-12.50", "Note"]
+    if format_value in {"csv_header", "tsv_header"}:
+        return delimiter.join([translate("common.date"), translate("common.label"), translate("common.amount"), translate("common.comment")]) + "\n" + delimiter.join(row)
+    return delimiter.join(row)
 
 
 def default_date_format() -> str:

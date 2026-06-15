@@ -5,7 +5,7 @@ import re
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -18,6 +18,7 @@ from rich.console import Console
 from rich.table import Table
 import typer
 
+from config import normalize_import_name
 import database
 from security import max_upload_bytes, zip_max_compression_ratio, zip_max_files, zip_max_uncompressed_factor
 from user_preferences import ensure_user_preferences
@@ -44,6 +45,8 @@ app.add_typer(import_app, name="import")
 app.add_typer(users_app, name="users")
 XLSX_NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 REL_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+EXCEL_EPOCH = date(1899, 12, 30)
+PERSONAL_BUDGET_SKIP_SHEETS = {"budget", "feuil1"}
 FULL_EXPORT_VERSION = "5"
 FULL_EXPORT_TABLES = [
     ("users", ["id", "email", "hashed_password", "is_active", "is_superuser", "is_verified", "last_login", "created_at"]),
@@ -126,6 +129,48 @@ OPTIONAL_IMPORT_DEFAULTS = {
 class WorkbookSheet:
     name: str
     rows: dict[int, dict[int, str]]
+
+
+@dataclass
+class TransactionImport:
+    sheet_name: str
+    account: str
+    tx_date: str
+    label: str
+    amount: float
+    row_number: int
+
+
+@dataclass
+class ImportProblem:
+    sheet_name: str
+    row_number: int
+    account: str
+    label: str
+    reason: str
+
+
+@dataclass
+class ImportInconsistency:
+    sheet_name: str
+    row_number: int
+    period_start: str
+    period_end: str
+    account: str
+    tx_date: str
+    label: str
+    amount: float
+    reason: str
+
+
+@dataclass
+class PeriodImport:
+    name: str
+    start_date: str
+    end_date: str | None
+    balances: dict[str, float | None]
+    transactions: list[TransactionImport]
+    problems: list[ImportProblem]
 
 
 @app.callback()
@@ -239,6 +284,24 @@ def import_user_command(
         summary = import_user_database(db_path, resolved_path, user, backend)
         console.print(f"[green]Import utilisateur terminé:[/green] {resolved_path}")
         print_count_summary(summary)
+    except Exception as error:
+        handle_error(error)
+
+
+@import_app.command("personal-budget")
+def import_personal_budget_command(
+    ctx: typer.Context,
+    user: str = typer.Argument(..., help="Email ou UUID utilisateur cible."),
+    import_path: Path = typer.Argument(..., help="Ancien classeur Personnal-Budget .xlsx."),
+) -> None:
+    """Importe l'ancien classeur Personnal-Budget vers un utilisateur."""
+    db_path, backend = cli_context(ctx)
+    try:
+        ensure_database(db_path, backend)
+        resolved_path = resolve_xlsx_path(import_path.expanduser())
+        summary = import_personal_budget_database(db_path, resolved_path, user, backend)
+        console.print(f"[green]Import Personnal-Budget terminé:[/green] {resolved_path}")
+        print_personal_budget_summary(summary)
     except Exception as error:
         handle_error(error)
 
@@ -498,6 +561,92 @@ def import_user_database_bytes(
     return import_user_sheets(conn, sheets, user_id)
 
 
+def import_personal_budget_database(
+    db_path: Path,
+    import_path: Path,
+    user_key: str,
+    backend: str = "sqlite",
+) -> dict[str, object]:
+    if import_path.suffix.lower() == ".xls":
+        raise ValueError("Le format .xls binaire n'est pas supporté sans xlrd. Sauve le fichier en .xlsx.")
+    sheets = read_xlsx(import_path)
+    with open_database(db_path, backend) as conn:
+        user = find_user(conn, user_key)
+        if user is None:
+            raise ValueError(f"Utilisateur introuvable: {user_key}")
+        return import_personal_budget_sheets(conn, sheets, user["id"])
+
+
+def import_personal_budget_sheets(
+    conn: sqlite3.Connection | database.MySQLConnection,
+    sheets: list[WorkbookSheet],
+    user_id: str,
+) -> dict[str, object]:
+    periods = build_personal_budget_periods(sheets)
+    ignored_sheets = [sheet.name for sheet in sheets if sheet.name.lower() in PERSONAL_BUDGET_SKIP_SHEETS]
+    clear_user_budget_data(conn, user_id)
+    account_ids: dict[str, int] = {}
+    transaction_count = 0
+    inconsistencies: list[ImportInconsistency] = []
+    problems = [problem for period in periods for problem in period.problems]
+    for period in periods:
+        period_id = insert_personal_budget_period(conn, user_id, period)
+        period_start = date.fromisoformat(period.start_date)
+        period_end = date.fromisoformat(period.end_date) if period.end_date else None
+        for account_name in personal_budget_period_account_names(period):
+            account_id = get_or_create_personal_budget_account(conn, user_id, account_ids, account_name)
+            opening = period.balances.get(account_name)
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO account_balances(user_id, period_id, account_id, opening)
+                VALUES (?, ?, ?, ?)
+                """,
+                (user_id, period_id, account_id, opening),
+            )
+        sort_indexes: dict[int, int] = {}
+        for tx in sorted(period.transactions, key=lambda item: (item.tx_date, item.row_number, item.account)):
+            tx_date = date.fromisoformat(tx.tx_date)
+            if tx_date < period_start or (period_end is not None and tx_date > period_end):
+                inconsistencies.append(
+                    ImportInconsistency(
+                        sheet_name=tx.sheet_name,
+                        row_number=tx.row_number,
+                        period_start=period.start_date,
+                        period_end=period.end_date or "en cours",
+                        account=tx.account,
+                        tx_date=tx.tx_date,
+                        label=tx.label,
+                        amount=tx.amount,
+                        reason="date hors période visible dans le classeur",
+                    )
+                )
+            account_id = get_or_create_personal_budget_account(conn, user_id, account_ids, tx.account)
+            conn.execute("INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, tx.label))
+            sort_index = sort_indexes.get(account_id, 0) + 1
+            sort_indexes[account_id] = sort_index
+            conn.execute(
+                """
+                INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, sort_index)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, period_id, account_id, tx.tx_date, tx.label, tx.amount, sort_index),
+            )
+            transaction_count += 1
+    database.ensure_internal_transfer_labels(conn, user_id)
+    conn.commit()
+    return {
+        "periods": len(periods),
+        "accounts": int(conn.execute("SELECT COUNT(*) FROM accounts WHERE user_id = ?", (user_id,)).fetchone()[0]),
+        "transactions": transaction_count,
+        "out_of_range_transactions": len(inconsistencies),
+        "inconsistencies": inconsistencies,
+        "skipped_transactions": len(problems),
+        "problems": problems,
+        "labels": int(conn.execute("SELECT COUNT(*) FROM transaction_labels WHERE user_id = ?", (user_id,)).fetchone()[0]),
+        "ignored_sheets": ignored_sheets,
+    }
+
+
 def validate_user_import(sheets: dict[str, WorkbookSheet]) -> None:
     required_tables = [
         (table_name, columns)
@@ -702,6 +851,221 @@ def clear_user_data(conn: sqlite3.Connection | database.MySQLConnection, user_id
         conn.execute(f"DELETE FROM {table_name} WHERE user_id = ?", (user_id,))
 
 
+def clear_user_budget_data(conn: sqlite3.Connection | database.MySQLConnection, user_id: str) -> None:
+    for table_name in (
+        "transactions",
+        "budget_schedule",
+        "monthly_budget",
+        "account_balances",
+        "transaction_labels",
+        "accounts",
+        "period",
+    ):
+        conn.execute(f"DELETE FROM {table_name} WHERE user_id = ?", (user_id,))
+
+
+def build_personal_budget_periods(sheets: list[WorkbookSheet]) -> list[PeriodImport]:
+    period_sheets = [sheet for sheet in sheets if sheet.name.lower() not in PERSONAL_BUDGET_SKIP_SHEETS]
+    parsed = [parse_personal_budget_period_sheet(sheet) for sheet in period_sheets]
+    for index, period in enumerate(parsed):
+        next_start = date.fromisoformat(parsed[index + 1].start_date) if index + 1 < len(parsed) else None
+        if period.end_date is None and next_start is not None:
+            period.end_date = next_start.isoformat()
+    return parsed
+
+
+def parse_personal_budget_period_sheet(sheet: WorkbookSheet) -> PeriodImport:
+    problems: list[ImportProblem] = []
+    transactions = parse_personal_budget_transactions(sheet, problems)
+    anchor_date = first_personal_budget_transaction_date(sheet) or min(
+        (date.fromisoformat(tx.tx_date) for tx in transactions),
+        default=None,
+    )
+    raw_period = find_personal_budget_period_text(sheet)
+    parsed_range = parse_personal_budget_period_range(raw_period, anchor_date) if raw_period else (None, None)
+    start_date = parsed_range[0] or anchor_date or date.today()
+    end_date = parsed_range[1]
+    return PeriodImport(
+        name=sheet.name,
+        start_date=start_date.isoformat(),
+        end_date=end_date.isoformat() if end_date else None,
+        balances=parse_personal_budget_balances(sheet),
+        transactions=transactions,
+        problems=problems,
+    )
+
+
+def first_personal_budget_transaction_date(sheet: WorkbookSheet) -> date | None:
+    header = sheet.rows.get(3, {})
+    date_columns = [column for column, value in sorted(header.items()) if normalize_personal_budget_text(value) == "date"]
+    if not date_columns:
+        return None
+    first_date_column = date_columns[0]
+    for row_number in sorted(sheet.rows):
+        if row_number <= 3:
+            continue
+        value = sheet.rows[row_number].get(first_date_column, "")
+        if value:
+            return parse_personal_budget_excel_date(value)
+    return None
+
+
+def find_personal_budget_period_text(sheet: WorkbookSheet) -> str:
+    for row in sheet.rows.values():
+        for value in row.values():
+            if value.strip().lower().startswith("du "):
+                return value.strip()
+    return ""
+
+
+def parse_personal_budget_period_range(value: str, reference_date: date | None) -> tuple[date | None, date | None]:
+    match = re.search(r"du\s+([0-9]{1,2})/([0-9]{1,2})\s*->\s*([0-9]{1,2})/([0-9]{1,2})", value, re.I)
+    if not match or reference_date is None:
+        return None, None
+    start_day, start_month, end_day, end_month = (int(part) for part in match.groups())
+    start = date(reference_date.year, start_month, start_day)
+    if abs((reference_date - start).days) > 14:
+        return None, None
+    end_year = reference_date.year + (1 if end_month < start_month else 0)
+    end = date(end_year, end_month, end_day)
+    return start, end
+
+
+def parse_personal_budget_balances(sheet: WorkbookSheet) -> dict[str, float | None]:
+    header = sheet.rows.get(3, {})
+    if normalize_personal_budget_text(header.get(0)) != "compte" or normalize_personal_budget_text(header.get(1)) != "debut":
+        return {}
+    balances: dict[str, float | None] = {}
+    for row_number in sorted(sheet.rows):
+        if row_number <= 3:
+            continue
+        row = sheet.rows[row_number]
+        account = normalize_import_name(row.get(0, ""))
+        if not account or account.lower().startswith("solde "):
+            continue
+        balances[account] = parse_personal_budget_optional_float(row.get(1, ""))
+    return balances
+
+
+def parse_personal_budget_transactions(
+    sheet: WorkbookSheet,
+    problems: list[ImportProblem] | None = None,
+) -> list[TransactionImport]:
+    header = sheet.rows.get(3, {})
+    title_row = sheet.rows.get(2, {})
+    problems = problems if problems is not None else []
+    transactions: list[TransactionImport] = []
+    date_columns = [column for column, value in header.items() if normalize_personal_budget_text(value) == "date"]
+    for date_col in date_columns:
+        account_from_header = normalize_import_name(title_row.get(date_col, ""))
+        is_other_accounts = normalize_personal_budget_text(account_from_header).startswith("other accounts")
+        if is_other_accounts:
+            account_col, label_col, amount_col = date_col + 1, date_col + 2, date_col + 3
+        else:
+            account_col, label_col, amount_col = None, date_col + 1, date_col + 2
+        for row_number in sorted(sheet.rows):
+            if row_number <= 3:
+                continue
+            row = sheet.rows[row_number]
+            raw_date = row.get(date_col, "")
+            label = normalize_import_name(row.get(label_col, ""))
+            amount_value = row.get(amount_col, "")
+            account = normalize_import_name(row.get(account_col, "")) if account_col is not None else account_from_header
+            present_count = sum(1 for value in (raw_date, label, amount_value) if str(value).strip())
+            if present_count == 0:
+                continue
+            if present_count < 3:
+                problems.append(ImportProblem(sheet.name, row_number, account, label, "date, intitulé ou montant manquant"))
+                continue
+            if not account:
+                problems.append(ImportProblem(sheet.name, row_number, account, label, "compte manquant"))
+                continue
+            try:
+                tx_date = parse_personal_budget_excel_date(raw_date)
+                amount = parse_personal_budget_float(amount_value)
+            except ValueError as error:
+                problems.append(ImportProblem(sheet.name, row_number, account, label, str(error)))
+                continue
+            transactions.append(
+                TransactionImport(
+                    sheet_name=sheet.name,
+                    account=account,
+                    tx_date=tx_date.isoformat(),
+                    label=label,
+                    amount=amount,
+                    row_number=row_number,
+                )
+            )
+    return transactions
+
+
+def insert_personal_budget_period(
+    conn: sqlite3.Connection | database.MySQLConnection,
+    user_id: str,
+    period: PeriodImport,
+) -> int:
+    conn.execute(
+        "INSERT INTO period(user_id, name, start_date, end_date) VALUES (?, ?, ?, ?)",
+        (user_id, period.name, period.start_date, period.end_date),
+    )
+    return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+
+def personal_budget_period_account_names(period: PeriodImport) -> list[str]:
+    names = {tx.account for tx in period.transactions}
+    names.update(period.balances.keys())
+    return sorted(names)
+
+
+def get_or_create_personal_budget_account(
+    conn: sqlite3.Connection | database.MySQLConnection,
+    user_id: str,
+    cache: dict[str, int],
+    name: str,
+) -> int:
+    if name in cache:
+        return cache[name]
+    row = conn.execute("SELECT id FROM accounts WHERE user_id = ? AND name = ?", (user_id, name)).fetchone()
+    if row:
+        account_id = int(row["id"])
+    else:
+        sort_index = int(
+            conn.execute("SELECT COALESCE(MAX(sort_index), 0) + 1 FROM accounts WHERE user_id = ?", (user_id,)).fetchone()[0]
+        )
+        conn.execute(
+            "INSERT INTO accounts(user_id, name, sort_index, visible_if_empty) VALUES (?, ?, ?, 1)",
+            (user_id, name, sort_index),
+        )
+        account_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    cache[name] = account_id
+    return account_id
+
+
+def parse_personal_budget_excel_date(value: str) -> date:
+    raw = str(value or "").strip()
+    if re.fullmatch(r"\d+(\.\d+)?", raw):
+        return EXCEL_EPOCH + timedelta(days=int(float(raw)))
+    for pattern in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(raw, pattern).date()
+        except ValueError:
+            pass
+    raise ValueError(f"Date Excel invalide: {value}")
+
+
+def parse_personal_budget_float(value: str) -> float:
+    return float(str(value).replace("\xa0", "").replace(" ", "").replace(",", "."))
+
+
+def parse_personal_budget_optional_float(value: str) -> float | None:
+    value = str(value or "").strip()
+    return parse_personal_budget_float(value) if value else None
+
+
+def normalize_personal_budget_text(value: object) -> str:
+    return str(value or "").strip().casefold()
+
+
 def find_user(conn: sqlite3.Connection | database.MySQLConnection, user_key: str):
     return conn.execute(
         "SELECT id, email FROM users WHERE id = ? OR LOWER(email) = LOWER(?)",
@@ -796,6 +1160,34 @@ def print_count_summary(summary: dict[str, int]) -> None:
     for table_name, count in summary.items():
         table.add_row(table_name, str(count))
     console.print(table)
+
+
+def print_personal_budget_summary(summary: dict[str, object]) -> None:
+    count_summary = {
+        "period": int(summary["periods"]),
+        "accounts": int(summary["accounts"]),
+        "transactions": int(summary["transactions"]),
+        "out_of_range_transactions": int(summary["out_of_range_transactions"]),
+        "skipped_transactions": int(summary["skipped_transactions"]),
+        "transaction_labels": int(summary["labels"]),
+    }
+    print_count_summary(count_summary)
+    ignored_sheets = ", ".join(str(sheet) for sheet in summary["ignored_sheets"]) or "-"
+    console.print(f"Feuilles ignorées: {ignored_sheets}")
+    for inconsistency in summary["inconsistencies"]:
+        console.print(
+            "[yellow]Incohérence importée[/yellow] - "
+            f"feuille {inconsistency.sheet_name}, ligne {inconsistency.row_number}, "
+            f"période {inconsistency.period_start} -> {inconsistency.period_end}, "
+            f"date {inconsistency.tx_date}, compte {inconsistency.account}, "
+            f"intitulé {inconsistency.label}, montant {inconsistency.amount:g}: {inconsistency.reason}"
+        )
+    for problem in summary["problems"]:
+        console.print(
+            "[red]Non importé[/red] - "
+            f"feuille {problem.sheet_name}, ligne {problem.row_number}, "
+            f"compte {problem.account or '-'}, intitulé {problem.label or '-'}: {problem.reason}"
+        )
 
 
 def validate_full_import(sheets: dict[str, WorkbookSheet]) -> None:

@@ -1,7 +1,7 @@
 <section class="page-title">
   <div>
     <p class="eyebrow">{{ period_label }}</p>
-    <h1>CSV-import</h1>
+    <h1>{{ page_title }}</h1>
   </div>
   <a class="button ghost" href="/period/{{ period_id }}?account={{ account_id }}">Terug naar rekening</a>
 </section>
@@ -11,7 +11,7 @@
     <div><dt>Periode</dt><dd>{{ period_name }}</dd></div>
     <div><dt>Datums valides</dt><dd>{{ period_start_date }} &lt;= date{% if period_end_date %} &lt;= {{ period_end_date }}{% endif %}</dd></div>
   </dl>
-  <form method="post" action="/period/{{ period_id }}/import" class="import-form">
+  <form method="post" action="{{ form_action }}" class="import-form">
     <input type="hidden" name="account_id" value="{{ account_id }}">
     <div class="form-row">
       <label>Datumformaat
@@ -32,17 +32,17 @@
         </select>
       </label>
     </div>
-    <label>Te importeren gegevens
-      <textarea name="csv_import" rows="12" data-import-textarea placeholder="Datum,Rubriek,Bedrag,Opmerking&#10;26/03/2026,Course - Exemple,-12.50,Note">{{ raw_csv }}</textarea>
+    <label>{{ textarea_label }}
+      <textarea name="{{ textarea_name }}" rows="12" data-import-textarea placeholder="{{ textarea_placeholder }}">{{ raw_csv }}</textarea>
     </label>
     <div class="form-actions">
-      <button name="action" value="validate">Validatie</button>
-      {% if validation %}
+      <button name="action" value="{{ primary_action }}">{{ primary_label }}</button>
+      {% if show_validation and validation %}
       <button name="action" value="import"{% if validation.problem_count %} disabled{% endif %}>Importeren</button>
       {% endif %}
     </div>
   </form>
-  {% if validation %}
+  {% if show_validation and validation %}
   <div class="import-validation">
     <h2>Te importeren bestand</h2>
     <table>

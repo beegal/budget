@@ -203,6 +203,7 @@
           <button type="button" class="row-confirm icon-button" data-add-row title="Rij toevoegen" aria-label="Rij toevoegen">{{ content.plus_icon | safe }}</button>
           <button type="button" class="row-delete icon-button" data-remove-all title="Alle rijen verwijderen" aria-label="Alle rijen verwijderen">{{ content.clear_icon | safe }}</button>
           <a class="button ghost import-button icon-button" href="/period/{{ content.period_id }}/import?account={{ content.account_id }}" title="Importer CSV" aria-label="Importer CSV">{{ content.upload_icon | safe }}</a>
+          <a class="button ghost export-button icon-button" href="/period/{{ content.period_id }}/export?account={{ content.account_id }}" title="Exporter CSV" aria-label="Exporter CSV">{{ content.download_icon | safe }}</a>
         </td>
       </tr>
     </tfoot>
