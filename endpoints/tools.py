@@ -128,7 +128,7 @@ def merge_labels(data: dict[str, list[str]], user_id: str) -> str:
             (user_id, *source_names),
         ).fetchone()[0]
         for source_name in source_names:
-            merge_note = f"moved from {source_name}"
+            merge_note = f"Move from {source_name}."
             rows = conn.execute(
                 """
                 SELECT id, comment
@@ -140,7 +140,7 @@ def merge_labels(data: dict[str, list[str]], user_id: str) -> str:
             ).fetchall()
             for row in rows:
                 current_comment = str(row["comment"] or "").strip()
-                new_comment = f"{current_comment} {merge_note}".strip()
+                new_comment = f"{merge_note} {current_comment}".strip()
                 conn.execute(
                     "UPDATE transactions SET label = ?, comment = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
                     (destination_name, new_comment, row["id"], user_id),
