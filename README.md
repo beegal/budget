@@ -29,20 +29,46 @@ The deployment details are environment-specific; the application itself listens 
 - Export/import one user's data from the UI.
 - Export/import the full database from the CLI.
 - Run with multiple users isolated by `user_id`.
+- Serve separate desktop and mobile template/CSS variants.
 
 ## Project Stats
 
 Approximate workspace stats, excluding local databases and temporary files:
 
-- 185 application files.
-- About 18,040 lines.
-- 34 Python files, about 6,679 lines.
-- 105 HTML/Jinja templates, about 3,730 lines.
-- 5 JavaScript files, about 2,150 lines.
-- 1 main CSS file, about 2,027 lines.
+- 291 application files.
+- About 27,609 lines.
+- 35 Python files, about 8,195 lines.
+- 218 HTML/Jinja templates, about 7,861 lines.
+- 5 JavaScript files, about 2,250 lines.
+- 3 CSS files, about 6,706 lines.
 - 4 locale YAML files: `fr`, `en`, `de`, `nl`.
 - 78 route declarations and route-like handlers across the FastAPI app and endpoints.
-- 10 local SVG icons.
+- 13 local SVG icons.
+
+## Desktop And Mobile UI
+
+Desktop and mobile are intentionally split into separate template and CSS trees:
+
+```text
+templates/desktop/
+templates/mobile/
+static/desktop.css
+static/mobile.css
+```
+
+Desktop is the default variant. Mobile is selected from the browser user agent, or can be forced with:
+
+```text
+?view=mobile
+```
+
+The desktop UI should not be changed to make mobile work. Mobile-specific simplifications belong in `templates/mobile/` and `static/mobile.css`.
+
+Current mobile scope is intentionally smaller than desktop:
+
+- Login and periods are supported.
+- Period account tabs are collapsed into an account selector.
+- Mobile period screens do not expose CSV import, CSV export, delete-all transactions or delete-all budget entries.
 
 ## Data
 
@@ -508,15 +534,23 @@ scripts/run-github-workflow-local.sh --push
 ├── scripts/
 ├── static/
 │   ├── app.js
+│   ├── desktop.css
 │   ├── icons/
 │   ├── js/
+│   ├── mobile.css
 │   └── style.css
 ├── templates/
-│   ├── de/
-│   ├── en/
-│   ├── fr/
-│   └── nl/
+│   ├── desktop/
+│   │   ├── de/
+│   │   ├── en/
+│   │   ├── fr/
+│   │   └── nl/
+│   └── mobile/
+│       ├── de/
+│       ├── en/
+│       ├── fr/
+│       └── nl/
 └── tests/
 ```
 
-`static/app.js` is only a compatibility pointer. Active frontend code lives in `static/js/`.
+`static/app.js` and `static/style.css` are compatibility files. Active frontend code lives in `static/js/`; active UI styling is split between `static/desktop.css` and `static/mobile.css`.

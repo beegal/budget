@@ -1,0 +1,28 @@
+<section class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+  </div>
+</section>
+{% include "components/settings_tabs.html" %}
+<script>window.BUDGET_LABELS = {{ labels_json | safe }};</script>
+
+<section class="panel tools-panel">
+  <h2>{{ label_merge_title }}</h2>
+  {% if error %}
+  <p class="save-error admin-error">{{ error }}</p>
+  {% endif %}
+  {% if message %}
+  <p class="save-state">{{ message }}</p>
+  {% endif %}
+  {% if source_labels|length < 1 %}
+  <p class="muted">{{ empty_label_message }}</p>
+  {% else %}
+  <form class="profile-form" method="post" action="/tools/labels/merge">
+    <label>{{ merge_to_label }}</label>
+    {{ destination_label_picker | safe }}
+    <label>{{ merge_from_label }}</label>
+    {% include "components/label_selector.html" %}
+    <button type="submit">{{ merge_button }}</button>
+  </form>
+  {% endif %}
+</section>

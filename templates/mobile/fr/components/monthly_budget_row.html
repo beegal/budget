@@ -1,0 +1,8 @@
+<tr class="{{ amount_class }}" data-budget-row data-id="{{ row_id }}">
+  <td><input data-budget-field="day" value="{{ day }}" data-original="{{ day }}" inputmode="numeric"></td>
+  <td>{{ label_picker | safe }}</td>
+  <td><input data-budget-field="amount" value="{{ amount_display }}" data-original="{{ amount_display }}" inputmode="decimal"></td>
+  <td class="row-actions">
+    {{ actions | safe }}
+  </td>
+</tr>

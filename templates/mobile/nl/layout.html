@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="{{ html_lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - Personal Finance</title>
+  <link rel="stylesheet" href="/static/{{ stylesheet }}">
+  <script>window.BUDGET_CONFIG = {{ frontend_config | safe }};</script>
+  <script>window.BUDGET_I18N = {{ frontend_i18n | safe }};</script>
+  <script defer src="/static/js/core.js"></script>
+  <script defer src="/static/js/editing.js"></script>
+  <script defer src="/static/js/filters.js"></script>
+  <script defer src="/static/js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Personal Finance</a>
+    {% if authenticated %}
+    <nav>
+      <a href="/">Periodes</a>
+      <a href="/transactions">Transacties</a>
+      <a href="/summary">Overzicht</a>
+      <label class="language-selector" title="Taal">
+        <span class="language-selector-icon" data-language-selector-icon>{% for language in languages %}{% if language.selected %}{{ language.icon }}{% endif %}{% endfor %}</span>
+        <select data-language-selector aria-label="Taal">
+          {% for language in languages %}
+          <option value="{{ language.id }}" data-icon="{{ language.icon }}"{% if language.selected %} selected{% endif %}>{{ language.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <a class="nav-icon-link" href="/parameters" title="{{ settings_menu_label }}" aria-label="{{ settings_menu_label }}">{{ setup_icon | safe }}</a>
+      <form class="logout-form" method="post" action="/logout"><button type="submit" class="nav-icon-button" title="Afmelden" aria-label="Afmelden">{{ logout_icon | safe }}</button></form>
+    </nav>
+    {% endif %}
+    {% if not authenticated %}
+    <label class="language-selector" title="Taal">
+      <span class="language-selector-icon" data-language-selector-icon>{% for language in languages %}{% if language.selected %}{{ language.icon }}{% endif %}{% endfor %}</span>
+      <select data-language-selector aria-label="Taal">
+        {% for language in languages %}
+        <option value="{{ language.id }}" data-icon="{{ language.icon }}"{% if language.selected %} selected{% endif %}>{{ language.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+  </header>
+  <main>{{ body | safe }}</main>
+</body>
+</html>

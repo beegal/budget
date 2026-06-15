@@ -20,7 +20,7 @@ from i18n import frontend_messages, preferred_language, translate, use_language
 from transfer_labels import is_internal_transfer_label, is_internal_transfer_group
 from user_preferences import UserPreferences, defaults_for_language, use_preferences
 from version import current_commit_id
-from web_helpers import format_date, normalize_date, parse_month
+from web_helpers import current_template_variant, format_date, normalize_date, parse_month, preferred_template_variant, use_template_variant
 
 
 class DateParsingTests(unittest.TestCase):
@@ -81,6 +81,21 @@ class MultilingualTests(unittest.TestCase):
         self.assertTrue(is_internal_transfer_label("Interne overschrijving - Cash"))
         self.assertTrue(is_internal_transfer_group("Interne Uberweisung"))
         self.assertFalse(is_internal_transfer_label("Internet"))
+
+
+class TemplateVariantTests(unittest.TestCase):
+    def test_template_variant_defaults_to_desktop(self) -> None:
+        self.assertEqual(current_template_variant(), "desktop")
+
+    def test_mobile_user_agent_selects_mobile_templates(self) -> None:
+        self.assertEqual(preferred_template_variant("Mozilla/5.0 (iPhone) Mobile"), "mobile")
+        self.assertEqual(preferred_template_variant("Mozilla/5.0 (Macintosh)"), "desktop")
+
+    def test_template_variant_context_is_scoped(self) -> None:
+        self.assertEqual(current_template_variant(), "desktop")
+        with use_template_variant("mobile"):
+            self.assertEqual(current_template_variant(), "mobile")
+        self.assertEqual(current_template_variant(), "desktop")
 
 
 class SummaryTests(unittest.TestCase):

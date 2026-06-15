@@ -1,0 +1,53 @@
+<section class="page-title"><h1>Summary</h1></section>
+<nav class="tabs summary-tabs">
+  <a class="tab {% if active_tab == 'table' %}active{% endif %}" href="{{ table_tab_url }}">Numbers</a>
+  <a class="tab {% if active_tab == 'chart' %}active{% endif %}" href="{{ chart_tab_url }}">Chart</a>
+</nav>
+<form class="filters summary-filters {% if active_tab == 'chart' %}summary-filters-chart{% endif %}" method="get" data-multi-auto-submit>
+  <input type="hidden" name="tab" value="{{ active_tab }}">
+  {% include "components/period_selector.html" %}
+  {% if active_tab == 'chart' %}{% include "components/label_selector.html" %}{% endif %}
+  <button class="icon-button summary-refresh-button" title="Refresh" aria-label="Refresh">↻</button>
+</form>
+{% if active_tab == 'table' %}
+<section class="panel">
+  <h2>Income / expenses by label</h2>
+  <table class="overview-table">
+    <thead><tr><th title="Grouped by the text before "-".">Label</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><a href="{{ row.href }}">{{ row.label_group }}</a></td>
+        <td class="num positive">{{ row.income }}</td>
+        <td class="num negative">{{ row.expense }}</td>
+        <td class="num {{ row.net_class }}">{{ row.net }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No transaction.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if rows %}
+    <tfoot>
+      <tr class="total-row">
+        <th>Total</th>
+        <th class="num positive">{{ totals.income }}</th>
+        <th class="num negative">{{ totals.expense }}</th>
+        <th class="num {{ totals.net_class }}">{{ totals.net }}</th>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</section>
+{% else %}
+<section class="panel">
+  <h2>Chart by period</h2>
+  {% if chart.has_data %}
+  {% for graph in chart.graphs %}
+  <h3 class="summary-chart-title">{{ graph.title }}</h3>
+  {% include "components/summary_chart_graph.html" %}
+  {% endfor %}
+  {% else %}
+  <p>No transaction.</p>
+  {% endif %}
+</section>
+{% endif %}

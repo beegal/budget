@@ -1,0 +1,21 @@
+<section class="page-title">
+  <h1>Profil</h1>
+</section>
+{% include "components/settings_tabs.html" %}
+
+<section class="panel profile-panel">
+  <h2>Préférences d'affichage</h2>
+  <form class="profile-form" method="post" action="/profile">
+    <label>Format d'affichage des dates
+      <select name="date_format">
+        {% for option in date_formats %}
+        <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Décimales des nombres
+      <input name="number_decimals" value="{{ number_decimals }}" type="number" min="0" max="6" step="1">
+    </label>
+    <button type="submit">Enregistrer</button>
+  </form>
+</section>

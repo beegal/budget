@@ -1,0 +1,18 @@
+<div class="multi-filter period-selector-filter" data-multi-filter>
+  <input type="hidden" name="periods" value="{{ period_selector.value }}" data-multi-filter-value>
+  <div class="multi-tag-box" data-multi-tag-box>
+    {% for tag in period_selector.tags %}
+    <span class="multi-filter-tag" data-multi-tag="{{ tag.id }}">{{ tag.name }}<button type="button" data-multi-tag-remove aria-label="Entfernen {{ tag.name }}">x</button></span>
+    {% endfor %}
+    <input type="text" data-multi-tag-input placeholder="Periodenfilter">
+  </div>
+  <button type="button" class="multi-filter-toggle" data-multi-filter-toggle>Perioden</button>
+  <div class="multi-filter-menu" data-multi-filter-menu hidden>
+    <input class="multi-filter-search" type="text" data-multi-filter-search placeholder="Liste filtern">
+    <button type="button" class="multi-filter-option" data-multi-filter-all>Alle</button>
+    <button type="button" class="multi-filter-option" data-multi-filter-none>Keine Auswahl</button>
+    {% for period in period_selector.periods %}
+    <label><input type="checkbox" value="{{ period.id }}" data-multi-filter-checkbox data-multi-name="{{ period.name }}" {% if period.checked %}checked{% endif %}> {{ period.name }}</label>
+    {% endfor %}
+  </div>
+</div>

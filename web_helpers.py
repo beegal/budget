@@ -3,9 +3,12 @@ from __future__ import annotations
 import html
 import json
 import sqlite3
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date
 from functools import cache
 from pathlib import Path
+from typing import Iterator
 from urllib.parse import urlencode
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -16,14 +19,52 @@ from config import strip_accents
 from user_preferences import current_date_order, current_month_lookup, current_number_decimals, current_preferences
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+DEFAULT_TEMPLATE_VARIANT = "desktop"
+SUPPORTED_TEMPLATE_VARIANTS = {"desktop", "mobile"}
+_CURRENT_TEMPLATE_VARIANT: ContextVar[str] = ContextVar("budget_template_variant", default=DEFAULT_TEMPLATE_VARIANT)
+
+
+def current_template_variant() -> str:
+    return _CURRENT_TEMPLATE_VARIANT.get()
+
+
+def normalize_template_variant(value: str | None) -> str:
+    variant = str(value or "").strip().lower()
+    if variant in SUPPORTED_TEMPLATE_VARIANTS:
+        return variant
+    return DEFAULT_TEMPLATE_VARIANT
+
+
+def preferred_template_variant(user_agent: str | None) -> str:
+    raw = str(user_agent or "").lower()
+    mobile_markers = ("android", "iphone", "ipad", "ipod", "mobile", "windows phone")
+    return "mobile" if any(marker in raw for marker in mobile_markers) else DEFAULT_TEMPLATE_VARIANT
+
+
+@contextmanager
+def use_template_variant(value: str | None) -> Iterator[None]:
+    token = _CURRENT_TEMPLATE_VARIANT.set(normalize_template_variant(value))
+    try:
+        yield
+    finally:
+        _CURRENT_TEMPLATE_VARIANT.reset(token)
 
 
 @cache
-def jinja_env(language: str) -> Environment:
-    localized_dir = TEMPLATES_DIR / language
-    search_paths = [localized_dir, TEMPLATES_DIR] if localized_dir.exists() else [TEMPLATES_DIR]
+def jinja_env(variant: str, language: str) -> Environment:
+    variant = normalize_template_variant(variant)
+    variant_dir = TEMPLATES_DIR / variant
+    desktop_dir = TEMPLATES_DIR / DEFAULT_TEMPLATE_VARIANT
+    search_paths = []
+    for base_dir in (variant_dir, desktop_dir):
+        localized_dir = base_dir / language
+        if localized_dir.exists():
+            search_paths.append(localized_dir)
+        if base_dir.exists():
+            search_paths.append(base_dir)
+    deduped_paths = list(dict.fromkeys(search_paths))
     env = Environment(
-        loader=FileSystemLoader(search_paths),
+        loader=FileSystemLoader(deduped_paths),
         autoescape=select_autoescape(("html",)),
     )
     env.globals["t"] = translate
@@ -32,11 +73,16 @@ def jinja_env(language: str) -> Environment:
 
 def render_template(template_name: str, **context: object) -> str:
     language = current_language()
-    template_path = TEMPLATES_DIR / language / template_name
-    fallback_path = TEMPLATES_DIR / template_name
-    if not template_path.exists() and not fallback_path.exists():
+    variant = current_template_variant()
+    candidate_paths = [
+        TEMPLATES_DIR / variant / language / template_name,
+        TEMPLATES_DIR / variant / template_name,
+        TEMPLATES_DIR / DEFAULT_TEMPLATE_VARIANT / language / template_name,
+        TEMPLATES_DIR / DEFAULT_TEMPLATE_VARIANT / template_name,
+    ]
+    if not any(path.exists() for path in candidate_paths):
         return template_not_found(template_name)
-    return jinja_env(language).get_template(template_name).render(**context)
+    return jinja_env(variant, language).get_template(template_name).render(**context)
 
 
 def normalize_date(value: object) -> str | None:
@@ -151,7 +197,8 @@ def layout(title: str, body: str) -> bytes:
     from components.common import icon
 
     preferences = current_preferences()
-    frontend_config = {**preferences.as_frontend_config(), "language": current_language(), "locale": current_language_locale_tag()}
+    template_variant = current_template_variant()
+    frontend_config = {**preferences.as_frontend_config(), "language": current_language(), "locale": current_language_locale_tag(), "templateVariant": template_variant}
     return render_template(
         "layout.html",
         title=title,
@@ -163,6 +210,7 @@ def layout(title: str, body: str) -> bytes:
         frontend_i18n=json.dumps(frontend_messages(), ensure_ascii=False),
         languages=language_options(),
         settings_menu_label=translate("nav.parameters-tools"),
+        stylesheet=f"{template_variant}.css",
         setup_icon=icon("setup"),
         logout_icon=icon("logout"),
     ).encode("utf-8")
@@ -171,7 +219,8 @@ def layout(title: str, body: str) -> bytes:
 def user_layout(title: str, body: str, user_id: str) -> bytes:
     from components.common import icon
 
-    frontend_config = {**current_preferences().as_frontend_config(), "language": current_language(), "locale": current_language_locale_tag()}
+    template_variant = current_template_variant()
+    frontend_config = {**current_preferences().as_frontend_config(), "language": current_language(), "locale": current_language_locale_tag(), "templateVariant": template_variant}
     return render_template(
         "layout.html",
         title=title,
@@ -183,6 +232,7 @@ def user_layout(title: str, body: str, user_id: str) -> bytes:
         frontend_i18n=json.dumps(frontend_messages(), ensure_ascii=False),
         languages=language_options(),
         settings_menu_label=translate("nav.parameters-tools"),
+        stylesheet=f"{template_variant}.css",
         setup_icon=icon("setup"),
         logout_icon=icon("logout"),
     ).encode("utf-8")

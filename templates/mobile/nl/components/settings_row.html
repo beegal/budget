@@ -1,0 +1,11 @@
+<tr data-settings-row data-kind="{{ kind }}" data-id="{{ row_id }}"{% if kind == "label" %} data-label-id="{{ row_id }}"{% endif %}>
+  {% if kind == "label" %}
+  <td><input value="{{ group_name }}" data-setting-value data-setting-part="group" data-original="{{ group_name }}" autocomplete="off"></td>
+  <td><input value="{{ subcategory }}" data-setting-value data-setting-part="subcategory" data-original="{{ subcategory }}" autocomplete="off"></td>
+  {% else %}
+  <td><input value="{{ name }}" data-setting-value data-original="{{ name }}" autocomplete="off"></td>
+  {% endif %}
+  <td class="row-actions">
+    {{ actions | safe }}
+  </td>
+</tr>

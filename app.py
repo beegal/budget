@@ -21,6 +21,7 @@ from i18n import preferred_language, translate, use_language
 from security import max_upload_bytes, only_https, validate_same_origin
 from user_preferences import ensure_user_preferences, use_preferences
 from version import APP_VERSION, current_commit_id
+from web_helpers import preferred_template_variant, use_template_variant
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -388,17 +389,20 @@ def user_id(user: auth.User) -> str:
 @contextmanager
 def request_context(uid: str | None = None, request: Request | None = None) -> Iterator[None]:
     language_id = None
+    template_variant = None
     if request:
         language_id = request.cookies.get("budget_language") or preferred_language(request.headers.get("accept-language"))
-    with use_language(language_id):
-        if uid is None:
-            yield
-            return
-        with db() as conn:
-            preferences = ensure_user_preferences(conn, uid, language_id)
-            database.ensure_user_data(conn, uid, language_id)
-        with use_preferences(preferences):
-            yield
+        template_variant = request.query_params.get("view") or request.cookies.get("budget_view") or preferred_template_variant(request.headers.get("user-agent"))
+    with use_template_variant(template_variant):
+        with use_language(language_id):
+            if uid is None:
+                yield
+                return
+            with db() as conn:
+                preferences = ensure_user_preferences(conn, uid, language_id)
+                database.ensure_user_data(conn, uid, language_id)
+            with use_preferences(preferences):
+                yield
 
 
 def render_public_page(template_name: str, request: Request | None = None) -> bytes:
