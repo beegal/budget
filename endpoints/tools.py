@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, quote
 from components.common import label_picker
 from database import db
 from i18n import translate
-from transfer_labels import is_internal_transfer_label, normalized_text
+from transfer_labels import is_internal_transfer_label
 from web_helpers import one, render_template, settings_tabs_context, user_layout
 
 
@@ -108,7 +108,7 @@ def merge_labels(data: dict[str, list[str]], user_id: str) -> str:
             raise ValueError(translate("errors.label-not-found"))
         if any(is_internal_transfer_label(source["name"]) for source in existing_sources):
             raise ValueError(translate("errors.label-not-found"))
-        if normalized_text(destination_name) in {normalized_text(name) for name in source_names}:
+        if destination_name in {str(name).strip() for name in source_names}:
             raise ValueError(translate("tools.same-label-error"))
 
         conn.execute(

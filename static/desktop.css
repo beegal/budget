@@ -1390,6 +1390,7 @@ select {
 
 .admin-error {
   margin: 0 0 12px;
+  padding: 8px 12px;
 }
 
 .admin-table th,

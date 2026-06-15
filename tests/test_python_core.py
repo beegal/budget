@@ -397,6 +397,48 @@ class ToolsTests(unittest.TestCase):
         with patched_tools_db(conn), self.assertRaises(ValueError):
             merge_labels({"source_labels": ["none"], "destination_label": ["Food - New"]}, user_id)
 
+    def test_label_merge_rejects_exact_same_label(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "user-1"
+        conn.execute(
+            "INSERT INTO period(id, user_id, name, start_date, end_date) VALUES (?, ?, ?, ?, ?)",
+            (1, user_id, "Jan", "2026-01-01", "2026-01-31"),
+        )
+        conn.execute("INSERT INTO accounts(id, user_id, name, sort_index) VALUES (?, ?, ?, ?)", (1, user_id, "Cash", 1))
+        conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, 1, 1, "2026-01-05", "Food - Old", -10),
+        )
+
+        with patched_tools_db(conn), self.assertRaises(ValueError):
+            merge_labels({"source_labels": [encode_label("Food - Old")], "destination_label": ["Food - Old"]}, user_id)
+
+    def test_label_merge_allows_case_only_correction(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "user-1"
+        conn.execute("INSERT INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, "Sortie - Di"))
+        conn.execute("INSERT INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, "Sortie - DI"))
+        conn.execute(
+            "INSERT INTO period(id, user_id, name, start_date, end_date) VALUES (?, ?, ?, ?, ?)",
+            (1, user_id, "Jan", "2026-01-01", "2026-01-31"),
+        )
+        conn.execute("INSERT INTO accounts(id, user_id, name, sort_index) VALUES (?, ?, ?, ?)", (1, user_id, "Cash", 1))
+        conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount, comment) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, 1, 1, "2026-01-05", "Sortie - Di", -10, "old note"),
+        )
+
+        with patched_tools_db(conn):
+            merge_labels({"source_labels": [encode_label("Sortie - Di")], "destination_label": ["Sortie - DI"]}, user_id)
+
+        row = conn.execute("SELECT label, comment FROM transactions").fetchone()
+        self.assertEqual(row["label"], "Sortie - DI")
+        self.assertEqual(row["comment"], "Move from Sortie - Di. old note")
+
     def test_label_merge_can_create_destination_from_picker_text(self) -> None:
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
