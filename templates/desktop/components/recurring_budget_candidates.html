@@ -1,0 +1,48 @@
+<section class="recurring-budget-tool" data-recurring-budget-tool>
+  <h3>{{ t("parameters.recurring-payments") }}</h3>
+  <p class="settings-help">{{ t("parameters.recurring-payments-help") }}</p>
+  {% if candidates %}
+  <div class="settings-table-scroll">
+    <table class="sheet-table recurring-budget-table">
+      <thead>
+        <tr>
+          <th>{{ t("parameters.day") }}</th>
+          <th>{{ t("parameters.label") }}</th>
+          <th class="num">{{ t("parameters.amount") }}</th>
+          <th class="num">{{ t("parameters.occurrences") }}</th>
+          <th>{{ t("parameters.last-payment") }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for candidate in candidates %}
+        <tr class="{% if candidate.existing %}recurring-budget-existing{% endif %}">
+          <td>{{ candidate.day }}</td>
+          <td>{{ candidate.label }}</td>
+          <td class="num {{ candidate.amount_class }}">{{ candidate.amount }}</td>
+          <td class="num">{{ candidate.occurrences }}</td>
+          <td>{{ candidate.last_date }}</td>
+          <td class="row-actions">
+            {% if candidate.existing %}
+            <span class="muted" title="{{ t("parameters.already-in-monthly-budget") }}">-</span>
+            {% else %}
+            <button
+              type="button"
+              class="add-row-button"
+              data-add-recurring-budget
+              data-day="{{ candidate.day }}"
+              data-label="{{ candidate.label }}"
+              data-amount="{{ candidate.amount_raw }}"
+              title="{{ t("parameters.add-to-monthly-budget") }}"
+            >+</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">{{ t("parameters.no-recurring-payment") }}</p>
+  {% endif %}
+</section>

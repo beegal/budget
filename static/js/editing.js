@@ -668,7 +668,23 @@ async function saveBudgetRow(row) {
   snapshotBudgetRow(row);
   row.classList.remove("dirty", "save-error");
   setBudgetActions(row, false);
+  sortBudgetRows(row.closest("[data-monthly-budget-table]"));
   setSaveState(state, tr("js.saved"));
+}
+
+function sortBudgetRows(table) {
+  const tbody = table?.querySelector("tbody");
+  if (!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll("[data-budget-row]"));
+  rows.sort((left, right) => {
+    const leftDay = Number(left.querySelector('[data-budget-field="day"]')?.value || 0);
+    const rightDay = Number(right.querySelector('[data-budget-field="day"]')?.value || 0);
+    if (leftDay !== rightDay) return leftDay - rightDay;
+    const leftLabel = left.querySelector('[data-budget-field="label"]')?.value || "";
+    const rightLabel = right.querySelector('[data-budget-field="label"]')?.value || "";
+    return leftLabel.localeCompare(rightLabel, displayLocale());
+  });
+  rows.forEach((budgetRow) => tbody.appendChild(budgetRow));
 }
 
 async function deleteBudgetRow(row) {
@@ -711,6 +727,22 @@ function createBudgetRow(table) {
     </td>`;
   table.querySelector("tbody").appendChild(row);
   row.querySelector("[data-budget-field='day']").focus();
+}
+
+async function addRecurringBudgetCandidate(button) {
+  const table = document.querySelector("[data-monthly-budget-table]");
+  if (!table) return;
+  createBudgetRow(table);
+  const rows = table.querySelectorAll("[data-budget-row]");
+  const row = rows[rows.length - 1];
+  setBudgetField(row, "day", button.dataset.day || "");
+  setBudgetField(row, "label", button.dataset.label || "");
+  setBudgetField(row, "amount", button.dataset.amount || "");
+  await saveBudgetRow(row);
+  if (row.classList.contains("save-error")) return;
+  button.closest("tr")?.remove();
+  const candidateRows = document.querySelectorAll("[data-recurring-budget-tool] tbody tr");
+  if (candidateRows.length === 0) window.location.reload();
 }
 
 function restoreBudgetRow(row) {

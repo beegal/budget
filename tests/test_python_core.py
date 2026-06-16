@@ -14,7 +14,9 @@ import security
 from endpoints.api import delete_label, ensure_transaction_label, save_label_row, sync_internal_transfer
 from endpoints.filters import parse_period_ids
 from endpoints.imports import export_csv
-from endpoints.summary import chart_summary_rows, parse_label_groups, summary_chart_view
+from endpoints.period import period_summary_rows
+from endpoints.parameters import recurring_payment_candidates
+from endpoints.summary import chart_summary_rows, parse_label_groups, summary_chart_view, summary_rows
 from endpoints.tools import defined_labels, encode_label, labels_payload, merge_labels, used_labels
 from i18n import frontend_messages, preferred_language, translate, use_language
 from transfer_labels import is_internal_transfer_label, is_internal_transfer_group
@@ -99,6 +101,68 @@ class TemplateVariantTests(unittest.TestCase):
 
 
 class SummaryTests(unittest.TestCase):
+    def test_period_summary_includes_scheduled_budget_as_planned_budget(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "summary-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "s@example.test", "x"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Jan"))
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, 1, 1, "2026-01-02", "Food - Shop", -12),
+        )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Rent - Home", -100, "scheduled"),
+        )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Salary - Main", 200, "found"),
+        )
+
+        rows = {row["label_group"]: row for row in period_summary_rows(conn, 1, user_id)}
+
+        self.assertIn("Budget planifié", rows)
+        self.assertEqual(rows["Budget planifié"]["income"], 0)
+        self.assertEqual(rows["Budget planifié"]["expense"], -100)
+        self.assertEqual(rows["Budget planifié"]["net"], -100)
+
+    def test_global_summary_and_chart_include_only_scheduled_budget(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "summary-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "s@example.test", "x"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Jan"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (2, user_id, "Feb"))
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Rent - Home", -100, "scheduled"),
+        )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 2, "Salary - Main", 250, "scheduled"),
+        )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 2, "Food - Shop", -20, "cancel"),
+        )
+
+        table_rows = {row["label_group"]: row for row in summary_rows(conn, [1, 2], user_id)}
+        chart_rows_by_period = {
+            int(row["period_id"]): row
+            for row in chart_summary_rows(conn, [1, 2], user_id)
+            if row["label_group"] == "Budget planifié"
+        }
+
+        self.assertEqual(table_rows["Budget planifié"]["income"], 250)
+        self.assertEqual(table_rows["Budget planifié"]["expense"], -100)
+        self.assertEqual(table_rows["Budget planifié"]["net"], 150)
+        self.assertEqual(chart_rows_by_period[1]["expense"], -100)
+        self.assertEqual(chart_rows_by_period[2]["income"], 250)
+
     def test_period_filter_none_returns_empty_selection(self) -> None:
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -169,6 +233,127 @@ class SummaryTests(unittest.TestCase):
         )
         self.assertEqual(expense_graph["series"][1]["point_views"][0]["href"], "/transactions?periods=1&q=Food")
         self.assertEqual(expense_graph["series"][1]["href"], "/transactions?periods=1%2C2&q=Food")
+
+
+class ParametersTests(unittest.TestCase):
+    def test_recurring_payment_candidates_use_label_group_amount_and_three_distinct_periods(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "parameters-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "p@example.test", "x"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Jan"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (2, user_id, "Feb"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (3, user_id, "Mar"))
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        for period_id, tx_date, label in (
+            (1, "2026-01-05", "Rent - Home"),
+            (2, "2026-02-10", "Rent - Apartment"),
+            (3, "2026-03-15", "Rent - House"),
+        ):
+            conn.execute(
+                "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, period_id, 1, tx_date, label, -750),
+            )
+        conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, 1, 1, "2026-01-06", "Only once", -20),
+        )
+        conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, 2, 1, "2026-02-06", "Virement Interne - Cash", -100),
+        )
+
+        candidates = recurring_payment_candidates(conn, user_id)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["label"], "Rent - Home")
+        self.assertEqual(candidates[0]["day"], 10)
+        self.assertEqual(candidates[0]["amount_raw"], "-750.00")
+
+    def test_recurring_payment_candidates_ignore_two_period_matches(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "parameters-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "p@example.test", "x"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Jan"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (2, user_id, "Feb"))
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        for period_id, tx_date in ((1, "2026-01-05"), (2, "2026-02-05")):
+            conn.execute(
+                "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, period_id, 1, tx_date, "Rent - Home", -750),
+            )
+
+        self.assertEqual(recurring_payment_candidates(conn, user_id), [])
+
+    def test_recurring_payment_candidates_mark_existing_monthly_budget_labels(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "parameters-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "p@example.test", "x"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Jan"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (2, user_id, "Feb"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (3, user_id, "Mar"))
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        conn.execute("INSERT INTO monthly_budget(user_id, day, label, amount) VALUES (?, ?, ?, ?)", (user_id, 5, "Rent - Home", -750))
+        for period_id, tx_date, label in (
+            (1, "2026-01-05", "Rent - Home"),
+            (2, "2026-02-05", "Rent - Apartment"),
+            (3, "2026-03-05", "Rent - House"),
+        ):
+            conn.execute(
+                "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, period_id, 1, tx_date, label, -750),
+            )
+
+        candidates = recurring_payment_candidates(conn, user_id)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["label"], "Rent - Home")
+        self.assertTrue(candidates[0]["existing"])
+
+    def test_recurring_payment_candidates_only_use_last_four_periods(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "parameters-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "p@example.test", "x"))
+        for period_id in range(1, 6):
+            conn.execute(
+                "INSERT INTO period(id, user_id, name, start_date) VALUES (?, ?, ?, ?)",
+                (period_id, user_id, f"P{period_id}", f"2026-0{period_id}-01"),
+            )
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        for period_id in (1, 2, 3):
+            conn.execute(
+                "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, period_id, 1, f"2026-0{period_id}-05", "Old - Match", -50),
+            )
+
+        self.assertEqual(recurring_payment_candidates(conn, user_id), [])
+
+    def test_recurring_payment_candidates_are_sorted_by_day(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "parameters-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "p@example.test", "x"))
+        for period_id in range(1, 4):
+            conn.execute("INSERT INTO period(id, user_id, name, start_date) VALUES (?, ?, ?, ?)", (period_id, user_id, f"P{period_id}", f"2026-0{period_id}-01"))
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        for label, day, amount in (("Late - One", 20, -20), ("Early - One", 5, -10)):
+            for period_id in range(1, 4):
+                conn.execute(
+                    "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+                    (user_id, period_id, 1, f"2026-0{period_id}-{day:02d}", label, amount),
+                )
+
+        candidates = recurring_payment_candidates(conn, user_id)
+
+        self.assertEqual([candidate["label"] for candidate in candidates], ["Early - One", "Late - One"])
 
 
 class InternalTransferTests(unittest.TestCase):

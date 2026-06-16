@@ -710,6 +710,12 @@ document.addEventListener("click", async (event) => {
     createBudgetRow(addBudgetRow.closest("[data-monthly-budget-table]"));
   }
 
+  const addRecurringBudget = event.target.closest("[data-add-recurring-budget]");
+  if (addRecurringBudget) {
+    await addRecurringBudgetCandidate(addRecurringBudget);
+    return;
+  }
+
   const confirmBudget = event.target.closest("[data-confirm-budget]");
   if (confirmBudget) {
     await saveBudgetRow(confirmBudget.closest("[data-budget-row]"));

@@ -54,6 +54,16 @@ parameters:
   merge-account: Merge into another account
   delete-account: Delete account
   delete-account-blocked: Cannot delete the account because it contains {transactions} transaction(s)
+  day: Day
+  label: Label
+  amount: Amount
+  recurring-payments: Detected recurring payments
+  recurring-payments-help: Same label and same amount found in at least two periods.
+  occurrences: Occurrences
+  last-payment: Last payment
+  add-to-monthly-budget: Add to monthly budget
+  already-in-monthly-budget: Already in monthly budget
+  no-recurring-payment: No new recurring payment detected.
 admin:
   add-user: Add user
   create: Create
@@ -167,6 +177,7 @@ period:
   date-before-period: "Out-of-period date: {date} is before the start {start}."
   date-after-period: "Out-of-period date: {date} is after the end {end}."
 summary:
+  planned-budget: Planned budget
   label-filter: Label filter
   filter-list: Filter list
   line: Line

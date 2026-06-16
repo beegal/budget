@@ -148,6 +148,11 @@ def period_summary_rows(conn: sqlite3.Connection, period_id: int, user_id: str) 
                 t.amount
             FROM transactions t
             WHERE t.period_id = ? AND t.user_id = ?
+            UNION ALL
+            SELECT ? AS label_group,
+                   bs.amount
+            FROM budget_schedule bs
+            WHERE bs.period_id = ? AND bs.user_id = ? AND bs.status = 'scheduled'
         )
         SELECT grouped.label_group,
                COALESCE(SUM(CASE WHEN grouped.amount > 0 THEN grouped.amount END), 0) AS income,
@@ -157,7 +162,7 @@ def period_summary_rows(conn: sqlite3.Connection, period_id: int, user_id: str) 
         GROUP BY grouped.label_group
         ORDER BY grouped.label_group
         """,
-        (period_id, user_id),
+        (period_id, user_id, translate("summary.planned-budget"), period_id, user_id),
     ).fetchall()
 
 

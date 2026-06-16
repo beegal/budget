@@ -76,6 +76,15 @@ parameters:
   delete-account-blocked: Impossible de supprimer le compte car il contient {transactions} transaction(s)
   monthly-budget: Budget mensuel
   day: Jour
+  label: Intitulé
+  amount: Montant
+  recurring-payments: Paiements récurrents détectés
+  recurring-payments-help: Même intitulé et même montant trouvés dans au moins deux périodes.
+  occurrences: Occurrences
+  last-payment: Dernier paiement
+  add-to-monthly-budget: Ajouter au budget mensuel
+  already-in-monthly-budget: Déjà présent dans le budget mensuel
+  no-recurring-payment: Aucun nouveau paiement récurrent détecté.
   user-backup: Sauvegarde utilisateur
   label-help: "Sauvegardé comme \"Nom de groupage - Sous catégorie\"."
 admin:
@@ -134,6 +143,7 @@ summary:
   title: Synthèse
   by-label: Entrées / sorties par intitulé
   grouped-label-tooltip: Regroupé par le texte avant "-".
+  planned-budget: Budget planifié
   label-filter: Filtre intitulés
   filter-list: Filtrer la liste
   line: Ligne

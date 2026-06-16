@@ -81,3 +81,7 @@ def monthly_budget_row(row_id: int, day: int, label: str, amount: float) -> str:
 
 def empty_monthly_budget_row() -> str:
     return render_template("components/empty_monthly_budget_row.html")
+
+
+def recurring_budget_candidates_panel(candidates: list[dict[str, object]]) -> str:
+    return render_template("components/recurring_budget_candidates.html", candidates=candidates)

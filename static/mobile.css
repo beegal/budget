@@ -1346,6 +1346,22 @@ select {
   margin: 2px 0 10px;
 }
 
+.recurring-budget-tool {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 14px;
+}
+
+.recurring-budget-tool h3 {
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+
+.recurring-budget-existing td:not(.row-actions) {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
 .data-portability-panel {
   align-items: center;
   background: transparent;
@@ -1699,7 +1715,8 @@ td.editable {
 }
 
 .settings-table,
-.monthly-budget-table {
+.monthly-budget-table,
+.recurring-budget-table {
   font-size: 13px;
   table-layout: fixed;
 }
@@ -1707,7 +1724,9 @@ td.editable {
 .settings-table th,
 .settings-table td,
 .monthly-budget-table th,
-.monthly-budget-table td {
+.monthly-budget-table td,
+.recurring-budget-table th,
+.recurring-budget-table td {
   line-height: 1.35;
   padding: 4px 6px;
   vertical-align: middle;
@@ -1730,7 +1749,8 @@ td.editable {
 .monthly-budget-table .row-confirm,
 .monthly-budget-table .row-cancel,
 .monthly-budget-table .row-delete,
-.monthly-budget-table .add-row-button {
+.monthly-budget-table .add-row-button,
+.recurring-budget-table .add-row-button {
   min-height: 28px;
   min-width: 28px;
   padding: 4px 7px;

@@ -63,6 +63,11 @@ def summary_rows(conn: sqlite3.Connection, period_ids: list[int], user_id: str) 
                 t.amount
             FROM transactions t
             WHERE t.user_id = ? AND t.period_id IN ({placeholders})
+            UNION ALL
+            SELECT ? AS label_group,
+                   bs.amount
+            FROM budget_schedule bs
+            WHERE bs.user_id = ? AND bs.period_id IN ({placeholders}) AND bs.status = 'scheduled'
         )
         SELECT grouped.label_group,
                COALESCE(SUM(CASE WHEN grouped.amount > 0 THEN grouped.amount END), 0) AS income,
@@ -72,7 +77,7 @@ def summary_rows(conn: sqlite3.Connection, period_ids: list[int], user_id: str) 
         GROUP BY grouped.label_group
         ORDER BY grouped.label_group
         """,
-        [user_id, *period_ids],
+        [user_id, *period_ids, translate("summary.planned-budget"), user_id, *period_ids],
     ).fetchall()
 
 
@@ -160,6 +165,12 @@ def chart_summary_rows(conn: sqlite3.Connection, period_ids: list[int], user_id:
                 t.amount
             FROM transactions t
             WHERE t.user_id = ? AND t.period_id IN ({placeholders})
+            UNION ALL
+            SELECT bs.period_id,
+                   ? AS label_group,
+                   bs.amount
+            FROM budget_schedule bs
+            WHERE bs.user_id = ? AND bs.period_id IN ({placeholders}) AND bs.status = 'scheduled'
         )
         SELECT grouped.period_id,
                grouped.label_group,
@@ -170,7 +181,7 @@ def chart_summary_rows(conn: sqlite3.Connection, period_ids: list[int], user_id:
         GROUP BY grouped.period_id, grouped.label_group
         ORDER BY grouped.period_id, grouped.label_group
         """,
-        [user_id, *period_ids],
+        [user_id, *period_ids, translate("summary.planned-budget"), user_id, *period_ids],
     ).fetchall()
 
 

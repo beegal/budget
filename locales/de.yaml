@@ -54,6 +54,16 @@ parameters:
   merge-account: In ein anderes Konto zusammenführen
   delete-account: Konto löschen
   delete-account-blocked: Das Konto kann nicht gelöscht werden, weil es {transactions} Transaktion(en) enthält
+  day: Tag
+  label: Bezeichnung
+  amount: Betrag
+  recurring-payments: Erkannte wiederkehrende Zahlungen
+  recurring-payments-help: Gleiche Bezeichnung und gleicher Betrag in mindestens zwei Perioden gefunden.
+  occurrences: Vorkommen
+  last-payment: Letzte Zahlung
+  add-to-monthly-budget: Zum Monatsbudget hinzufügen
+  already-in-monthly-budget: Bereits im Monatsbudget vorhanden
+  no-recurring-payment: Keine neue wiederkehrende Zahlung erkannt.
 admin:
   add-user: Benutzer hinzufügen
   create: Erstellen
@@ -167,6 +177,7 @@ period:
   date-before-period: "Datum außerhalb der Periode: {date} liegt vor dem Anfang {start}."
   date-after-period: "Datum außerhalb der Periode: {date} liegt nach dem Ende {end}."
 summary:
+  planned-budget: Geplantes Budget
   label-filter: Bezeichnungsfilter
   filter-list: Liste filtern
   line: Linie

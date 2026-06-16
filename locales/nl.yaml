@@ -54,6 +54,16 @@ parameters:
   merge-account: Samenvoegen naar een andere rekening
   delete-account: Rekening verwijderen
   delete-account-blocked: De rekening kan niet worden verwijderd omdat ze {transactions} transactie(s) bevat
+  day: Dag
+  label: Rubriek
+  amount: Bedrag
+  recurring-payments: Gedetecteerde terugkerende betalingen
+  recurring-payments-help: Zelfde rubriek en zelfde bedrag gevonden in minstens twee periodes.
+  occurrences: Voorkomens
+  last-payment: Laatste betaling
+  add-to-monthly-budget: Toevoegen aan maandelijks budget
+  already-in-monthly-budget: Staat al in het maandelijks budget
+  no-recurring-payment: Geen nieuwe terugkerende betaling gedetecteerd.
 admin:
   add-user: Gebruiker toevoegen
   create: Maken
@@ -167,6 +177,7 @@ period:
   date-before-period: "Datum buiten periode: {date} ligt voor het begin {start}."
   date-after-period: "Datum buiten periode: {date} ligt na het einde {end}."
 summary:
+  planned-budget: Gepland budget
   label-filter: Rubriekfilter
   filter-list: Lijst filteren
   line: Lijn
