@@ -669,6 +669,7 @@ async function saveBudgetRow(row) {
   row.classList.remove("dirty", "save-error");
   setBudgetActions(row, false);
   sortBudgetRows(row.closest("[data-monthly-budget-table]"));
+  updateBudgetTotal(row.closest("[data-monthly-budget-table]"));
   setSaveState(state, tr("js.saved"));
 }
 
@@ -707,7 +708,18 @@ async function deleteBudgetRow(row) {
     return;
   }
   row.remove();
+  updateBudgetTotal(document.querySelector("[data-monthly-budget-table]"));
   setSaveState(state, tr("js.deleted"));
+}
+
+function updateBudgetTotal(table) {
+  const totalCell = table?.querySelector("[data-monthly-budget-total]");
+  if (!totalCell) return;
+  const total = Array.from(table.querySelectorAll("[data-budget-row]"))
+    .reduce((sum, row) => sum + parseDisplayNumber(row.querySelector('[data-budget-field="amount"]')?.value || ""), 0);
+  totalCell.textContent = formatDisplayMoney(total, numberDecimals());
+  totalCell.classList.toggle("positive", total > 0);
+  totalCell.classList.toggle("negative", total < 0);
 }
 
 function createBudgetRow(table) {

@@ -1362,6 +1362,11 @@ select {
   text-decoration: line-through;
 }
 
+.monthly-budget-total-row td {
+  border-top: 1px solid var(--line);
+  font-weight: 700;
+}
+
 .data-portability-panel {
   align-items: center;
   background: transparent;

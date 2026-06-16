@@ -51,6 +51,7 @@ def page(user_id: str) -> bytes:
         settings_row("label", row["id"], row["name"])
         for row in labels
     )
+    budget_total_value = sum(float(row["amount"] or 0) for row in budget_rows)
     budget_html = "".join(
         monthly_budget_row(row["id"], row["day"], row["label"], row["amount"])
         for row in budget_rows
@@ -63,6 +64,8 @@ def page(user_id: str) -> bytes:
         account_rows=account_rows,
         label_rows=label_rows,
         budget_html=budget_html,
+        budget_total=money(budget_total_value),
+        budget_total_class=amount_class(budget_total_value),
         recurring_candidates_html=recurring_candidates_html,
         **settings_tabs_context(user_id, "parameters"),
     )
@@ -150,6 +153,14 @@ def recent_period_ids(conn, user_id: str, limit: int) -> list[int]:
 def label_group(label: str) -> str:
     group, separator, _subcategory = label.partition(" - ")
     return group.strip() if separator else label.strip()
+
+
+def amount_class(amount: float) -> str:
+    if amount > 0:
+        return "positive"
+    if amount < 0:
+        return "negative"
+    return ""
 
 
 def create_account(data: dict[str, list[str]], user_id: str) -> str:

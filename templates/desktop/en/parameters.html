@@ -37,7 +37,7 @@
       <colgroup><col class="budget-day-col"><col><col class="budget-amount-col"><col class="actions-col"></colgroup>
       <thead><tr><th>Day</th><th>Label</th><th class="num">Amount</th><th></th></tr></thead>
       <tbody>{{ budget_html | safe }}</tbody>
-      <tfoot><tr><td></td><td></td><td></td><td class="row-actions"><button type="button" class="add-row-button" data-add-budget-row>+</button></td></tr></tfoot>
+      <tfoot><tr class="monthly-budget-total-row"><td></td><td class="num">{{ t("common.total") }}</td><td class="num {{ budget_total_class }}" data-monthly-budget-total>{{ budget_total }}</td><td class="row-actions"><button type="button" class="add-row-button" data-add-budget-row>+</button></td></tr></tfoot>
     </table>
     </div>
     {{ recurring_candidates_html | safe }}
