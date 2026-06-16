@@ -26,7 +26,7 @@
       <colgroup><col><col><col class="actions-col"></colgroup>
       <thead><tr><th>Gruppenname</th><th>Unterkategorie</th><th>Aktionen</th></tr></thead>
       <tbody>{{ label_rows | safe }}</tbody>
-      <tfoot><tr><td></td><td></td><td class="row-actions"><button type="button" class="add-row-button" data-add-setting-row>+</button></td></tr></tfoot>
+      <tfoot><tr><td></td><td></td><td class="row-actions"><button type="button" class="ghost compact-action" data-delete-unused-labels title="{{ t("parameters.delete-unused-labels") }}">{{ t("parameters.delete-unused-labels-short") }}</button><button type="button" class="add-row-button" data-add-setting-row>+</button></td></tr></tfoot>
     </table>
     </div>
   </div>

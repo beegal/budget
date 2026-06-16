@@ -54,6 +54,8 @@ parameters:
   merge-account: Merge into another account
   delete-account: Delete account
   delete-account-blocked: Cannot delete the account because it contains {transactions} transaction(s)
+  delete-unused-labels: Delete unused labels
+  delete-unused-labels-short: Clean
   day: Day
   label: Label
   amount: Amount

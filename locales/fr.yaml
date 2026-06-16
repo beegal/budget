@@ -74,6 +74,8 @@ parameters:
   merge-account: Fusionner vers un autre compte
   delete-account: Supprimer le compte
   delete-account-blocked: Impossible de supprimer le compte car il contient {transactions} transaction(s)
+  delete-unused-labels: Supprimer les intitulés inutilisés
+  delete-unused-labels-short: Nettoyer
   monthly-budget: Budget mensuel
   day: Jour
   label: Intitulé

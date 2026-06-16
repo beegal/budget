@@ -547,6 +547,27 @@ async function deleteSettingRow(row) {
   setSaveState(state, tr("js.deleted"));
 }
 
+async function deleteUnusedLabelRows(table) {
+  const state = document.querySelector("[data-save-state]");
+  setSaveState(state, tr("js.deleting"));
+  const response = await fetch("/api/label-delete-unused", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    setSaveState(state, result.error || tr("js.save-error"), true);
+    return;
+  }
+  const deleted = result.deleted || [];
+  for (const label of deleted) {
+    table?.querySelector(`[data-settings-row][data-label-id="${label.id}"]`)?.remove();
+    removeLabelName(label.name);
+  }
+  setSaveState(state, `${tr("js.deleted")} (${result.count || 0})`);
+}
+
 async function deleteAccountRow(row) {
   if (row.dataset.newRow === "true") {
     row.remove();

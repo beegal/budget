@@ -54,6 +54,8 @@ parameters:
   merge-account: In ein anderes Konto zusammenführen
   delete-account: Konto löschen
   delete-account-blocked: Das Konto kann nicht gelöscht werden, weil es {transactions} Transaktion(en) enthält
+  delete-unused-labels: Unbenutzte Bezeichnungen löschen
+  delete-unused-labels-short: Bereinigen
   day: Tag
   label: Bezeichnung
   amount: Betrag

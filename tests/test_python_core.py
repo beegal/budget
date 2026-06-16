@@ -11,7 +11,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import budget_cli
 import database
 import security
-from endpoints.api import delete_label, ensure_transaction_label, save_label_row, sync_internal_transfer
+from endpoints.api import delete_label, delete_unused_labels, ensure_transaction_label, save_label_row, sync_internal_transfer
 from endpoints.filters import parse_period_ids
 from endpoints.imports import export_csv
 from endpoints.period import period_summary_rows
@@ -460,6 +460,34 @@ class LabelIdentifierTests(unittest.TestCase):
             delete_label({"id": label_id}, user_id)
 
         self.assertIsNone(conn.execute("SELECT id FROM transaction_labels WHERE id = ?", (label_id,)).fetchone())
+
+    def test_delete_unused_labels_keeps_labels_used_by_any_budget_or_transaction(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "user-1"
+        labels = ["Unused - Old", "Used - Tx", "Used - Monthly", "Used - Scheduled"]
+        for label in labels:
+            conn.execute("INSERT INTO transaction_labels(user_id, name) VALUES (?, ?)", (user_id, label))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Jan"))
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, 1, 1, "2026-01-01", "Used - Tx", -1),
+        )
+        conn.execute("INSERT INTO monthly_budget(user_id, day, label, amount) VALUES (?, ?, ?, ?)", (user_id, 1, "Used - Monthly", -2))
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Used - Scheduled", -3, "scheduled"),
+        )
+
+        with patched_api_db(conn):
+            result = delete_unused_labels(user_id)
+
+        remaining = [row["name"] for row in conn.execute("SELECT name FROM transaction_labels ORDER BY name").fetchall()]
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["deleted"], [{"id": 1, "name": "Unused - Old"}])
+        self.assertEqual(remaining, ["Used - Monthly", "Used - Scheduled", "Used - Tx"])
 
     def test_label_update_rejects_unknown_id(self) -> None:
         conn = sqlite3.connect(":memory:")

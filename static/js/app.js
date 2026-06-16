@@ -705,6 +705,12 @@ document.addEventListener("click", async (event) => {
     await deleteSettingRow(deleteSetting.closest("[data-settings-row]"));
   }
 
+  const deleteUnusedLabels = event.target.closest("[data-delete-unused-labels]");
+  if (deleteUnusedLabels) {
+    await deleteUnusedLabelRows(deleteUnusedLabels.closest("[data-settings-table]"));
+    return;
+  }
+
   const addBudgetRow = event.target.closest("[data-add-budget-row]");
   if (addBudgetRow) {
     createBudgetRow(addBudgetRow.closest("[data-monthly-budget-table]"));

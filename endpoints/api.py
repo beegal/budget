@@ -53,6 +53,8 @@ def update(path: str, payload: dict[str, object], user_id: str) -> dict[str, obj
             return {"ok": True, **save_label_row(payload, user_id)}
         elif path == "/api/label-delete":
             delete_label(payload, user_id)
+        elif path == "/api/label-delete-unused":
+            return {"ok": True, **delete_unused_labels(user_id)}
         elif path == "/api/monthly-budget-row":
             return {"ok": True, **save_monthly_budget_row(payload, user_id)}
         elif path == "/api/monthly-budget-delete":
@@ -880,6 +882,32 @@ def delete_label(payload: dict[str, object], user_id: str) -> None:
         if row is None or is_internal_transfer_label(row["name"]):
             raise ValueError(translate("errors.label-not-found"))
         conn.execute("DELETE FROM transaction_labels WHERE id = ? AND user_id = ?", (label_id, user_id))
+
+
+def delete_unused_labels(user_id: str) -> dict[str, object]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT tl.id, tl.name
+            FROM transaction_labels tl
+            LEFT JOIN transactions t ON t.user_id = tl.user_id AND t.label = tl.name
+            LEFT JOIN monthly_budget mb ON mb.user_id = tl.user_id AND mb.label = tl.name
+            LEFT JOIN budget_schedule bs ON bs.user_id = tl.user_id AND bs.label = tl.name
+            WHERE tl.user_id = ?
+              AND t.id IS NULL
+              AND mb.id IS NULL
+              AND bs.id IS NULL
+            ORDER BY tl.name
+            """,
+            (user_id,),
+        ).fetchall()
+        deletable = [row for row in rows if not is_internal_transfer_label(row["name"])]
+        for row in deletable:
+            conn.execute("DELETE FROM transaction_labels WHERE id = ? AND user_id = ?", (row["id"], user_id))
+    return {
+        "deleted": [{"id": row["id"], "name": row["name"]} for row in deletable],
+        "count": len(deletable),
+    }
 
 
 def delete_named_row(table: str, payload: dict[str, object], user_id: str) -> None:

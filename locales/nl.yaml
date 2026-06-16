@@ -54,6 +54,8 @@ parameters:
   merge-account: Samenvoegen naar een andere rekening
   delete-account: Rekening verwijderen
   delete-account-blocked: De rekening kan niet worden verwijderd omdat ze {transactions} transactie(s) bevat
+  delete-unused-labels: Ongebruikte rubrieken verwijderen
+  delete-unused-labels-short: Opschonen
   day: Dag
   label: Rubriek
   amount: Bedrag
