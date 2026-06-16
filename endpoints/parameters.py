@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from datetime import date
 import json
 
+from components.common import icon
 from components.parameters import account_row, empty_monthly_budget_row, monthly_budget_row, recurring_budget_candidates_panel, settings_row
 from database import db, ensure_internal_transfer_labels
 from i18n import translate
@@ -66,6 +67,7 @@ def page(user_id: str) -> bytes:
         budget_html=budget_html,
         budget_total=money(budget_total_value),
         budget_total_class=amount_class(budget_total_value),
+        clean_icon=icon("broom"),
         recurring_candidates_html=recurring_candidates_html,
         **settings_tabs_context(user_id, "parameters"),
     )
