@@ -4,6 +4,7 @@ import os
 import sqlite3
 import unittest
 from contextlib import contextmanager
+from datetime import datetime
 from io import BytesIO
 from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -11,12 +12,14 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import budget_cli
 import database
 import security
-from endpoints.api import delete_label, delete_unused_labels, ensure_transaction_label, save_label_row, sync_internal_transfer
+from app import user_export_filename
+from endpoints.api import delete_label, delete_unused_labels, ensure_transaction_label, save_label_row, save_transaction_row, sync_internal_transfer
 from endpoints.filters import parse_period_ids
 from endpoints.imports import export_csv
 from endpoints.period import period_summary_rows
 from endpoints.parameters import recurring_payment_candidates
 from endpoints.summary import chart_summary_rows, parse_label_groups, summary_chart_view, summary_rows
+from endpoints.transactions import planned_budget_rows, should_show_planned_budget_rows
 from endpoints.tools import defined_labels, encode_label, labels_payload, merge_labels, used_labels
 from i18n import frontend_messages, preferred_language, translate, use_language
 from transfer_labels import is_internal_transfer_label, is_internal_transfer_group
@@ -101,7 +104,7 @@ class TemplateVariantTests(unittest.TestCase):
 
 
 class SummaryTests(unittest.TestCase):
-    def test_period_summary_includes_scheduled_budget_as_planned_budget(self) -> None:
+    def test_period_summary_splits_scheduled_budget_by_income_and_expense(self) -> None:
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         database.ensure_schema(conn)
@@ -119,15 +122,23 @@ class SummaryTests(unittest.TestCase):
         )
         conn.execute(
             "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Refund - Expected", 25, "scheduled"),
+        )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
             (user_id, 1, "Salary - Main", 200, "found"),
         )
 
         rows = {row["label_group"]: row for row in period_summary_rows(conn, 1, user_id)}
 
-        self.assertIn("Budget planifié", rows)
-        self.assertEqual(rows["Budget planifié"]["income"], 0)
-        self.assertEqual(rows["Budget planifié"]["expense"], -100)
-        self.assertEqual(rows["Budget planifié"]["net"], -100)
+        self.assertNotIn("Budget planifié", rows)
+        self.assertEqual(rows["Futur entrée"]["income"], 25)
+        self.assertEqual(rows["Futur entrée"]["expense"], 0)
+        self.assertEqual(rows["Futur entrée"]["net"], 25)
+        self.assertEqual(rows["Futur sortie"]["income"], 0)
+        self.assertEqual(rows["Futur sortie"]["expense"], -100)
+        self.assertEqual(rows["Futur sortie"]["net"], -100)
+        self.assertNotIn("Salary", rows)
 
     def test_global_summary_and_chart_include_only_scheduled_budget(self) -> None:
         conn = sqlite3.connect(":memory:")
@@ -149,19 +160,27 @@ class SummaryTests(unittest.TestCase):
             "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
             (user_id, 2, "Food - Shop", -20, "cancel"),
         )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 2, "Found - Bonus", 500, "found"),
+        )
 
         table_rows = {row["label_group"]: row for row in summary_rows(conn, [1, 2], user_id)}
         chart_rows_by_period = {
-            int(row["period_id"]): row
+            (int(row["period_id"]), row["label_group"]): row
             for row in chart_summary_rows(conn, [1, 2], user_id)
-            if row["label_group"] == "Budget planifié"
         }
 
-        self.assertEqual(table_rows["Budget planifié"]["income"], 250)
-        self.assertEqual(table_rows["Budget planifié"]["expense"], -100)
-        self.assertEqual(table_rows["Budget planifié"]["net"], 150)
-        self.assertEqual(chart_rows_by_period[1]["expense"], -100)
-        self.assertEqual(chart_rows_by_period[2]["income"], 250)
+        self.assertNotIn("Budget planifié", table_rows)
+        self.assertEqual(table_rows["Futur entrée"]["income"], 250)
+        self.assertEqual(table_rows["Futur entrée"]["expense"], 0)
+        self.assertEqual(table_rows["Futur entrée"]["net"], 250)
+        self.assertEqual(table_rows["Futur sortie"]["income"], 0)
+        self.assertEqual(table_rows["Futur sortie"]["expense"], -100)
+        self.assertEqual(table_rows["Futur sortie"]["net"], -100)
+        self.assertEqual(chart_rows_by_period[(1, "Futur sortie")]["expense"], -100)
+        self.assertEqual(chart_rows_by_period[(2, "Futur entrée")]["income"], 250)
+        self.assertNotIn((2, "Found"), chart_rows_by_period)
 
     def test_period_filter_none_returns_empty_selection(self) -> None:
         conn = sqlite3.connect(":memory:")
@@ -233,6 +252,96 @@ class SummaryTests(unittest.TestCase):
         )
         self.assertEqual(expense_graph["series"][1]["point_views"][0]["href"], "/transactions?periods=1&q=Food")
         self.assertEqual(expense_graph["series"][1]["href"], "/transactions?periods=1%2C2&q=Food")
+
+    def test_planned_budget_transaction_rows_are_available_for_summary_link(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "summary-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "s@example.test", "x"))
+        conn.execute("INSERT INTO period(id, user_id, name, start_date) VALUES (?, ?, ?, ?)", (1, user_id, "Jan", "2026-01-01"))
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Rent - Home", -100, "scheduled"),
+        )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Refund - Expected", 25, "scheduled"),
+        )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Salary - Main", 200, "found"),
+        )
+
+        rows = planned_budget_rows(conn, [1], user_id)
+        income_rows = planned_budget_rows(conn, [1], user_id, "income")
+        expense_rows = planned_budget_rows(conn, [1], user_id, "expense")
+
+        self.assertTrue(should_show_planned_budget_rows("Budget planifié", True))
+        self.assertTrue(should_show_planned_budget_rows("Futur entrée", True))
+        self.assertTrue(should_show_planned_budget_rows("Futur sortie", True))
+        self.assertFalse(should_show_planned_budget_rows("Budget planifié", False))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["label"], "Budget planifié")
+        self.assertEqual(rows[0]["comment"], "Rent - Home")
+        self.assertEqual(rows[0]["account_name"], "Budget")
+        self.assertEqual(rows[0]["amount"], -100)
+        self.assertEqual(len(income_rows), 1)
+        self.assertEqual(income_rows[0]["label"], "Futur entrée")
+        self.assertEqual(income_rows[0]["amount"], 25)
+        self.assertEqual(len(expense_rows), 1)
+        self.assertEqual(expense_rows[0]["label"], "Futur sortie")
+        self.assertEqual(expense_rows[0]["amount"], -100)
+
+
+class TransactionBudgetScheduleTests(unittest.TestCase):
+    def test_saving_matching_transaction_reports_newly_found_budget(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "transaction-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "t@example.test", "x"))
+        conn.execute(
+            "INSERT INTO period(id, user_id, name, start_date, end_date) VALUES (?, ?, ?, ?, ?)",
+            (1, user_id, "Jan", "2026-01-01", "2026-01-31"),
+        )
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Rent - Home", -100, "scheduled"),
+        )
+
+        with patched_api_db(conn):
+            result = save_transaction_row(
+                {
+                    "period_id": 1,
+                    "account_id": 1,
+                    "date": "2026-01-10",
+                    "label": "Rent - Home",
+                    "amount": "-100",
+                    "comment": "",
+                },
+                user_id,
+            )
+            repeated = save_transaction_row(
+                {
+                    "period_id": 1,
+                    "account_id": 1,
+                    "date": "2026-01-11",
+                    "label": "Rent - Home",
+                    "amount": "-100",
+                    "comment": "",
+                },
+                user_id,
+            )
+
+        self.assertEqual(
+            result["budget_message"],
+            "Budget trouvé: Rent - Home (-100,00). Statut passé en trouvé.",
+        )
+        self.assertNotIn("budget_message", repeated)
+        status = conn.execute("SELECT status FROM budget_schedule").fetchone()["status"]
+        self.assertEqual(status, "found")
 
 
 class ParametersTests(unittest.TestCase):
@@ -737,6 +846,12 @@ class PersonalBudgetImportTests(unittest.TestCase):
 
 
 class CsvExportTests(unittest.TestCase):
+    def test_user_export_filename_contains_timestamp(self) -> None:
+        self.assertEqual(
+            user_export_filename(datetime(2026, 6, 28, 9, 8, 7)),
+            "budget-user-export-20260628-090807.xlsx",
+        )
+
     def test_export_csv_uses_import_format_columns(self) -> None:
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -911,6 +1026,17 @@ class DatabaseConfigurationTests(unittest.TestCase):
             os.environ.pop("BUDGET_DATABASE_URL", None)
             self.assertTrue(database.database_url().startswith("sqlite:///"))
             self.assertTrue(database.database_url(async_driver=True).startswith("sqlite+aiosqlite:///"))
+
+    def test_mysql_engine_uses_pre_ping_for_stale_connections(self) -> None:
+        self.assertEqual(database.engine_options("sqlite:////tmp/budget.sqlite3"), {})
+        self.assertEqual(
+            database.engine_options("mysql+pymysql://user:pass@example.test:3306/budget"),
+            {"pool_pre_ping": True},
+        )
+        self.assertEqual(
+            database.engine_options("mysql+aiomysql://user:pass@example.test:3306/budget"),
+            {"pool_pre_ping": True},
+        )
 
     def test_driver_sql_adapts_insert_ignore(self) -> None:
         sql = "INSERT OR IGNORE INTO transaction_labels(user_id, name) VALUES (?, ?)"

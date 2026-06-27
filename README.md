@@ -35,15 +35,15 @@ The deployment details are environment-specific; the application itself listens 
 
 Approximate workspace stats, excluding local databases and temporary files:
 
-- 291 application files.
-- About 27,609 lines.
-- 35 Python files, about 8,195 lines.
-- 218 HTML/Jinja templates, about 7,861 lines.
+- 302 application files.
+- About 28,806 lines.
+- 35 Python files, about 8,842 lines.
+- 219 HTML/Jinja templates, about 7,919 lines.
 - 5 JavaScript files, about 2,250 lines.
-- 3 CSS files, about 6,706 lines.
+- 3 CSS files, about 6,812 lines.
 - 4 locale YAML files: `fr`, `en`, `de`, `nl`.
 - 78 route declarations and route-like handlers across the FastAPI app and endpoints.
-- 13 local SVG icons.
+- 14 local SVG icons.
 
 ## Desktop And Mobile UI
 
@@ -128,7 +128,7 @@ Python unit tests use `unittest`:
 python3 -m unittest discover -s tests -v
 ```
 
-Current tests cover date parsing and display, language preference detection, translation fallback, user profile defaults, SQLAlchemy database URL handling, schema migrations, security limit configuration and XLSX zip bomb detection.
+Current tests cover date parsing and display, language preference detection, translation fallback, user profile defaults, SQLAlchemy database URL handling, stale MySQL connection recycling, schema migrations, security limit configuration, XLSX zip bomb detection, planned budget summaries and transaction/budget reconciliation.
 
 Docker/MySQL integration tests are opt-in because they build and run containers:
 
@@ -253,7 +253,7 @@ MySQL databases are created with `CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`. Ta
 ## Main Pages
 
 - `/`: period list and period creation.
-- `/parameters`: accounts, labels, monthly budget, user export/import.
+- `/parameters`: accounts, labels, monthly budget, user export/import. User export downloads are named `budget-user-export-YYYYMMDD-HHMMSS.xlsx`.
 - `/period/<id>`: one period with summary, budget tab and visible accounts.
 - `/period/<id>/import?account=<id>`: CSV/TSV import for an account.
 - `/transactions`: global transaction view with filters and totals.
@@ -331,7 +331,7 @@ python3 budget_cli.py export user user@example.com budget-user.xlsx
 python3 budget_cli.py import user user@example.com budget-user.xlsx
 ```
 
-Full exports include `users`, `user_profiles`, `profile_seeded` and all business tables. User exports contain only one user's business data and are remapped to the target user on import.
+Full exports include `users`, `user_profiles`, `profile_seeded` and all business tables. User exports contain only one user's business data and are remapped to the target user on import. UI user exports include a timestamp in the downloaded filename.
 
 ## Docker
 
@@ -399,13 +399,13 @@ Build locally on a Debian/Ubuntu host:
 ```bash
 sudo apt-get update
 sudo apt-get install -y zstd
-VERSION=v0.1.5 build/lxc/build-template.sh
+VERSION=v0.1.7 build/lxc/build-template.sh
 ```
 
 By default the build downloads the latest official Proxmox Debian 12 standard template from `download.proxmox.com`. To pin a base template version:
 
 ```bash
-PROXMOX_TEMPLATE_VERSION=12.12-1 VERSION=v0.1.5 build/lxc/build-template.sh
+PROXMOX_TEMPLATE_VERSION=12.12-1 VERSION=v0.1.7 build/lxc/build-template.sh
 ```
 
 To use a custom base template URL:
@@ -418,7 +418,7 @@ PROXMOX_TEMPLATE_URL=http://download.proxmox.com/images/system/debian-12-standar
 The output is:
 
 ```text
-dist/personal-finance-debian12-mariadb-amd64-v0.1.5.tar.zst
+dist/personal-finance-debian12-mariadb-amd64-v0.1.7.tar.zst
 ```
 
 ### Install The Proxmox CT
@@ -426,14 +426,14 @@ dist/personal-finance-debian12-mariadb-amd64-v0.1.5.tar.zst
 Download the published CT template release asset into the Proxmox template cache:
 
 ```bash
-wget -O /var/lib/vz/template/cache/personal-finance-debian12-mariadb-amd64-v0.1.5.tar.zst \
-  https://github.com/beegal/budget/releases/download/v0.1.5/personal-finance-debian12-mariadb-amd64-v0.1.5.tar.zst
+wget -O /var/lib/vz/template/cache/personal-finance-debian12-mariadb-amd64-v0.1.7.tar.zst \
+  https://github.com/beegal/budget/releases/download/v0.1.7/personal-finance-debian12-mariadb-amd64-v0.1.7.tar.zst
 ```
 
 Create the CT:
 
 ```bash
-pct create 120 local:vztmpl/personal-finance-debian12-mariadb-amd64-v0.1.5.tar.zst \
+pct create 120 local:vztmpl/personal-finance-debian12-mariadb-amd64-v0.1.7.tar.zst \
   --hostname personal-finance \
   --cores 1 \
   --memory 1024 \

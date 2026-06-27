@@ -127,9 +127,9 @@ def save_transaction_row(payload: dict[str, object], user_id: str) -> dict[str, 
         compact_transaction_indexes(conn, period_id, account_id, user_id)
         sync_internal_transfer(conn, saved_id, user_id)
         sort_index = conn.execute("SELECT sort_index FROM transactions WHERE id = ? AND user_id = ?", (saved_id, user_id)).fetchone()["sort_index"]
-        reconcile_budget_schedule(conn, period_id, user_id)
+        found_budget_rows = reconcile_budget_schedule(conn, period_id, user_id)
         rows = transaction_indexes(conn, period_id, account_id, user_id)
-    return {
+    result = {
         "id": saved_id,
         "date": format_date(tx_date),
         "date_sort": tx_date or "",
@@ -139,9 +139,24 @@ def save_transaction_row(payload: dict[str, object], user_id: str) -> dict[str, 
         "sort_index": sort_index,
         "rows": rows,
     }
+    if found_budget_rows:
+        found = found_budget_rows[0]
+        result["budget_message"] = translate(
+            "js.budget-found",
+            label=found["label"],
+            amount=format_number(float(found["amount"] or 0)),
+        )
+    return result
 
 
-def reconcile_budget_schedule(conn: sqlite3.Connection, period_id: int, user_id: str) -> None:
+def reconcile_budget_schedule(conn: sqlite3.Connection, period_id: int, user_id: str) -> list[dict[str, object]]:
+    previously_found_ids = {
+        int(row["id"])
+        for row in conn.execute(
+            "SELECT id FROM budget_schedule WHERE period_id = ? AND user_id = ? AND status = 'found'",
+            (period_id, user_id),
+        ).fetchall()
+    }
     conn.execute(
         """
         UPDATE budget_schedule
@@ -178,6 +193,20 @@ def reconcile_budget_schedule(conn: sqlite3.Connection, period_id: int, user_id:
             """,
             (period_id, user_id, transaction["label"], float(transaction["amount"] or 0)),
         )
+    found_rows = conn.execute(
+        """
+        SELECT id, label, amount
+        FROM budget_schedule
+        WHERE period_id = ? AND user_id = ? AND status = 'found'
+        ORDER BY id
+        """,
+        (period_id, user_id),
+    ).fetchall()
+    return [
+        {"id": int(row["id"]), "label": row["label"], "amount": row["amount"]}
+        for row in found_rows
+        if int(row["id"]) not in previously_found_ids
+    ]
 
 
 def parse_sort_index(value: object) -> int | None:

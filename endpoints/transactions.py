@@ -48,6 +48,9 @@ def page(query: str, user_id: str) -> bytes:
             """,
             values,
         ).fetchall()
+        planned_budget_filter = planned_budget_search_filter(search, all_accounts)
+        if planned_budget_filter:
+            rows = [*rows, *planned_budget_rows(conn, selected_period_ids, user_id, planned_budget_filter)]
     total_debit = sum(float(row["amount"] or 0) for row in rows if float(row["amount"] or 0) < 0)
     total_credit = sum(float(row["amount"] or 0) for row in rows if float(row["amount"] or 0) > 0)
     total = total_debit + total_credit
@@ -67,6 +70,68 @@ def page(query: str, user_id: str) -> bytes:
         },
     )
     return user_layout(translate("transactions.title"), body, user_id)
+
+
+def planned_budget_search_filter(search: str, all_accounts: bool) -> str:
+    if not all_accounts:
+        return ""
+    normalized = search.casefold()
+    if normalized == translate("summary.future-income").casefold():
+        return "income"
+    if normalized == translate("summary.future-expense").casefold():
+        return "expense"
+    if normalized == translate("summary.planned-budget").casefold():
+        return "all"
+    return ""
+
+
+def should_show_planned_budget_rows(search: str, all_accounts: bool) -> bool:
+    return bool(planned_budget_search_filter(search, all_accounts))
+
+
+def planned_budget_rows(conn, period_ids: list[int], user_id: str, amount_filter: str = "all") -> list[dict[str, object]]:
+    if not period_ids:
+        return []
+    placeholders = ", ".join("?" for _ in period_ids)
+    amount_condition = {
+        "income": "AND bs.amount > 0",
+        "expense": "AND bs.amount < 0",
+    }.get(amount_filter, "")
+    return conn.execute(
+        f"""
+        SELECT bs.id,
+               bs.user_id,
+               bs.period_id,
+               0 AS account_id,
+               COALESCE(p.start_date, '') AS date,
+               CASE
+                   WHEN ? = 'all' THEN ?
+                   WHEN bs.amount > 0 THEN ?
+                   ELSE ?
+               END AS label,
+               bs.amount,
+               0 AS sort_index,
+               bs.label AS comment,
+               p.name AS period_name,
+               ? AS account_name
+        FROM budget_schedule bs
+        JOIN period p ON p.id = bs.period_id AND p.user_id = bs.user_id
+        WHERE bs.user_id = ?
+          AND bs.period_id IN ({placeholders})
+          AND bs.status = 'scheduled'
+          {amount_condition}
+        ORDER BY COALESCE(p.start_date, ''), bs.id
+        """,
+        [
+            amount_filter,
+            translate("summary.planned-budget"),
+            translate("summary.future-income"),
+            translate("summary.future-expense"),
+            translate("period.budget"),
+            user_id,
+            *period_ids,
+        ],
+    ).fetchall()
 
 
 def create(data: dict[str, list[str]], user_id: str) -> str:

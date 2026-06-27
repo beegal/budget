@@ -26,6 +26,7 @@ js:
   reordering: Reordering...
   canceled: Canceled
   found: Found
+  budget-found: "Budget found: {label} ({amount}). Status changed to found."
   balance: Balance
   unknown-balance: "Balance: unknown"
   current-balance: Current balance
@@ -180,6 +181,8 @@ period:
   date-after-period: "Out-of-period date: {date} is after the end {end}."
 summary:
   planned-budget: Planned budget
+  future-income: Future income
+  future-expense: Future expense
   label-filter: Label filter
   filter-list: Filter list
   line: Line

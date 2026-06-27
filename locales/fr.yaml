@@ -146,6 +146,8 @@ summary:
   by-label: Entrées / sorties par intitulé
   grouped-label-tooltip: Regroupé par le texte avant "-".
   planned-budget: Budget planifié
+  future-income: Futur entrée
+  future-expense: Futur sortie
   label-filter: Filtre intitulés
   filter-list: Filtrer la liste
   line: Ligne
@@ -191,6 +193,7 @@ js:
   reordering: Réorganisation...
   canceled: Annulé
   found: Trouvé
+  budget-found: "Budget trouvé: {label} ({amount}). Statut passé en trouvé."
   balance: Solde
   unknown-balance: "Solde: inconnu"
   current-balance: Solde actuel

@@ -359,10 +359,18 @@ def adapt_database_url(url: str, async_driver: bool = False) -> str:
     return parsed.set(drivername=driver).render_as_string(hide_password=False)
 
 
+def engine_options(url: str) -> dict[str, object]:
+    backend = make_url(url).get_backend_name()
+    if backend == "mysql":
+        return {"pool_pre_ping": True}
+    return {}
+
+
 def connect(database_name: str | None = None, admin: bool = False) -> SQLAlchemyConnection:
     if database_backend() == "sqlite":
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(database_url(database_name, admin), future=True)
+    url = database_url(database_name, admin)
+    engine = create_engine(url, future=True, **engine_options(url))
     conn = SQLAlchemyConnection(engine)
     if conn.backend == "sqlite":
         conn.execute("PRAGMA foreign_keys = ON")

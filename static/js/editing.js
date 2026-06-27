@@ -190,7 +190,7 @@ async function saveTransactionRow(row) {
   applyTransactionIndexes(table, result.rows || []);
   updateTransactionRunningBalances(table);
   flashSavedRow(row);
-  setSaveState(state, tr("js.saved"));
+  setSaveState(state, result.budget_message || tr("js.saved"));
 }
 
 async function deleteTransactionRow(row) {

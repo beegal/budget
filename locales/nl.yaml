@@ -26,6 +26,7 @@ js:
   reordering: Opnieuw ordenen...
   canceled: Geannuleerd
   found: Gevonden
+  budget-found: "Budget gevonden: {label} ({amount}). Status op gevonden gezet."
   balance: Saldo
   unknown-balance: "Saldo: onbekend"
   current-balance: Huidig saldo
@@ -180,6 +181,8 @@ period:
   date-after-period: "Datum buiten periode: {date} ligt na het einde {end}."
 summary:
   planned-budget: Gepland budget
+  future-income: Toekomstige inkomsten
+  future-expense: Toekomstige uitgaven
   label-filter: Rubriekfilter
   filter-list: Lijst filteren
   line: Lijn

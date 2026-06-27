@@ -1373,6 +1373,20 @@ select {
   padding: 4px 8px;
 }
 
+.settings-table [data-delete-unused-labels] {
+  height: 28px;
+  min-height: 28px;
+  min-width: 28px;
+  padding: 4px 7px;
+  vertical-align: middle;
+  width: 28px;
+}
+
+.settings-table [data-delete-unused-labels] svg {
+  height: 16px;
+  width: 16px;
+}
+
 .data-portability-panel {
   align-items: center;
   background: transparent;

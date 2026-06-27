@@ -4,7 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
-APP_VERSION = os.environ.get("BUDGET_APP_VERSION", "0.1.6")
+APP_VERSION = os.environ.get("BUDGET_APP_VERSION", "0.1.7")
 
 
 def current_commit_id() -> str:

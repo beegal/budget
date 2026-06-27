@@ -53,7 +53,8 @@ def auth_database_url() -> str:
     return database.database_url(async_driver=True)
 
 
-engine = create_async_engine(auth_database_url())
+_auth_database_url = auth_database_url()
+engine = create_async_engine(_auth_database_url, **database.engine_options(_auth_database_url))
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 

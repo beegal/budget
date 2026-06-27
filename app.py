@@ -202,8 +202,13 @@ def parameters_export(user: auth.User = Depends(auth.current_active_user)) -> Re
     return Response(
         data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="budget-user-export.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="{user_export_filename()}"'},
     )
+
+
+def user_export_filename(now: datetime | None = None) -> str:
+    timestamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    return f"budget-user-export-{timestamp}.xlsx"
 
 
 @application.post("/parameters/import", response_model=None)

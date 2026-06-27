@@ -1376,6 +1376,20 @@ select {
   gap: 10px;
 }
 
+.settings-table [data-delete-unused-labels] {
+  height: 28px;
+  min-height: 28px;
+  min-width: 28px;
+  padding: 4px 7px;
+  vertical-align: middle;
+  width: 28px;
+}
+
+.settings-table [data-delete-unused-labels] svg {
+  height: 16px;
+  width: 16px;
+}
+
 .data-portability-actions input[type="file"] {
   max-width: 220px;
 }
