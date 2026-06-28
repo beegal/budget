@@ -17,6 +17,7 @@ from endpoints.api import delete_label, delete_unused_labels, ensure_transaction
 from endpoints.filters import parse_period_ids
 from endpoints.imports import export_csv
 from endpoints.period import period_summary_rows
+from endpoints.periods import period_overview_totals
 from endpoints.parameters import recurring_payment_candidates
 from endpoints.summary import chart_summary_rows, parse_label_groups, summary_chart_view, summary_rows
 from endpoints.transactions import planned_budget_rows, should_show_planned_budget_rows
@@ -139,6 +140,45 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(rows["Futur sortie"]["expense"], -100)
         self.assertEqual(rows["Futur sortie"]["net"], -100)
         self.assertNotIn("Salary", rows)
+
+    def test_period_card_totals_match_period_overview_totals(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "summary-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "s@example.test", "x"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Jan"))
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, 1, 1, "2026-01-02", "Salary - Main", 200),
+        )
+        conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, 1, 1, "2026-01-03", "Virement interne - Savings", -50),
+        )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Rent - Home", -100, "scheduled"),
+        )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Refund - Expected", 25, "scheduled"),
+        )
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, ?)",
+            (user_id, 1, "Ignored - Found", 500, "found"),
+        )
+
+        totals = period_overview_totals(conn, 1, user_id)
+
+        self.assertEqual(totals["actual_income"], 200)
+        self.assertEqual(totals["actual_expense"], 0)
+        self.assertEqual(totals["planned_income"], 25)
+        self.assertEqual(totals["planned_expense"], -100)
+        self.assertEqual(totals["income"], 225)
+        self.assertEqual(totals["expense"], -100)
+        self.assertEqual(totals["net"], 125)
 
     def test_global_summary_and_chart_include_only_scheduled_budget(self) -> None:
         conn = sqlite3.connect(":memory:")

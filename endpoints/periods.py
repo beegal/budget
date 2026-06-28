@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 import sqlite3
 
+from components.period import is_transfer_group
 from components.periods import period_card_view
 from database import db
+from endpoints.period import period_summary_rows
 from i18n import translate
 from web_helpers import format_date, normalize_date, one, period_label, render_template, user_layout
 
@@ -15,17 +17,11 @@ def page(user_id: str) -> bytes:
             """
             SELECT m.*,
                    COALESCE(tx.transaction_count, 0) AS transaction_count,
-                   COALESCE(bs.budget_count, 0) AS budget_count,
-                   COALESCE(tx.income, 0) AS income,
-                   COALESCE(tx.expense, 0) AS expense,
-                   COALESCE(tx.net, 0) AS net
+                   COALESCE(bs.budget_count, 0) AS budget_count
             FROM period m
             LEFT JOIN (
                 SELECT period_id,
-                       COUNT(*) AS transaction_count,
-                       COALESCE(SUM(CASE WHEN amount > 0 THEN amount END), 0) AS income,
-                       COALESCE(SUM(CASE WHEN amount < 0 THEN amount END), 0) AS expense,
-                       COALESCE(SUM(amount), 0) AS net
+                       COUNT(*) AS transaction_count
                 FROM transactions
                 WHERE user_id = ?
                 GROUP BY period_id
@@ -41,6 +37,7 @@ def page(user_id: str) -> bytes:
             """,
             (user_id, user_id, user_id),
         ).fetchall()
+        periods = [period_with_overview_totals(conn, row, user_id) for row in periods]
     overlap_reasons = period_warnings(periods)
     period_views = [
         period_card_view(row, overlap_reasons.get(row["id"]))
@@ -48,6 +45,49 @@ def page(user_id: str) -> bytes:
     ]
     body = render_template("periods.html", today=format_date(date.today().isoformat()), periods=period_views)
     return user_layout(translate("nav.periods"), body, user_id)
+
+
+def period_with_overview_totals(conn: sqlite3.Connection, row: sqlite3.Row, user_id: str) -> dict[str, object]:
+    totals = period_overview_totals(conn, int(row["id"]), user_id)
+    return {
+        **dict(row),
+        "income": totals["actual_income"],
+        "expense": totals["actual_expense"],
+        "planned_income": totals["planned_income"],
+        "planned_expense": totals["planned_expense"],
+        "has_planned": totals["planned_income"] != 0 or totals["planned_expense"] != 0,
+        "net": totals["net"],
+    }
+
+
+def period_overview_totals(conn: sqlite3.Connection, period_id: int, user_id: str) -> dict[str, float]:
+    planned_income_label = translate("summary.future-income").casefold()
+    planned_expense_label = translate("summary.future-expense").casefold()
+    totals = {
+        "actual_income": 0.0,
+        "actual_expense": 0.0,
+        "planned_income": 0.0,
+        "planned_expense": 0.0,
+    }
+    rows = [
+        row
+        for row in period_summary_rows(conn, period_id, user_id)
+        if not is_transfer_group(str(row["label_group"]))
+    ]
+    for row in rows:
+        label_group = str(row["label_group"]).casefold()
+        if label_group == planned_income_label:
+            totals["planned_income"] += float(row["income"] or 0)
+        elif label_group == planned_expense_label:
+            totals["planned_expense"] += float(row["expense"] or 0)
+        else:
+            totals["actual_income"] += float(row["income"] or 0)
+            totals["actual_expense"] += float(row["expense"] or 0)
+
+    totals["income"] = totals["actual_income"] + totals["planned_income"]
+    totals["expense"] = totals["actual_expense"] + totals["planned_expense"]
+    totals["net"] = totals["income"] + totals["expense"]
+    return totals
 
 
 def period_warnings(periods: list[sqlite3.Row]) -> dict[int, str]:

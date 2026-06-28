@@ -30,6 +30,9 @@ def period_card_view(row: sqlite3.Row, warning: str | None) -> dict[str, object]
         "end_date": end_date,
         "income": money(row["income"]),
         "expense": money(row["expense"]),
+        "planned_income": money(row["planned_income"]),
+        "planned_expense": money(row["planned_expense"]),
+        "has_planned": bool(row["has_planned"]),
         "net": money(row["net"]),
         "trash_icon": icon("trash"),
     }
