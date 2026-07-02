@@ -41,7 +41,7 @@ def page(period_id: int, query: str, user_id: str) -> bytes:
                 SELECT *
                 FROM budget_schedule
                 WHERE period_id = ? AND user_id = ?
-                ORDER BY id
+                ORDER BY COALESCE(date, ''), id
                 """,
                 (period_id, user_id),
             ).fetchall()

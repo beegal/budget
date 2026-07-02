@@ -143,6 +143,8 @@ function updateTransactionRunningBalances(table) {
   const balanceDefined = openingRaw.trim() !== "";
   const decimals = Number(table.dataset.numberDecimals || numberDecimals());
   let runningBalance = balanceDefined ? parseDisplayNumber(openingRaw) : 0;
+  let operationsIncome = 0;
+  let operationsExpense = 0;
   let operationsTotal = 0;
 
   table.querySelectorAll("tbody tr").forEach((row) => {
@@ -156,6 +158,8 @@ function updateTransactionRunningBalances(table) {
     }
     const amount = parseDisplayNumber(getRowField(row, "amount"));
     if (Number.isFinite(amount)) {
+      if (amount > 0) operationsIncome += amount;
+      else if (amount < 0) operationsExpense += amount;
       operationsTotal += amount;
       if (balanceDefined) runningBalance += amount;
     }
@@ -163,9 +167,10 @@ function updateTransactionRunningBalances(table) {
 
   const currentBalance = table.querySelector("[data-current-balance-text]");
   if (currentBalance) {
+    const totalIncomeLabel = `${tr("common.total")} ${tr("common.income").toLocaleLowerCase(displayLocale())}`;
+    const totalExpenseLabel = `${tr("common.total")} ${tr("common.expense").toLocaleLowerCase(displayLocale())}`;
     currentBalance.textContent = balanceDefined
-      ? `${tr("js.current-balance")} : ${formatDisplayMoney(runningBalance, decimals)} - ${tr("js.total-operations")} : ${formatDisplayMoney(operationsTotal, decimals)}`
-      : `${tr("js.current-balance")} : ${tr("period.unknown")} - ${tr("js.total-operations")} : ${formatDisplayMoney(operationsTotal, decimals)}`;
+      ? `${tr("js.current-balance")} : ${formatDisplayMoney(runningBalance, decimals)} - ${totalIncomeLabel} : ${formatDisplayMoney(operationsIncome, decimals)} - ${totalExpenseLabel} : ${formatDisplayMoney(operationsExpense, decimals)} - ${tr("js.total-operations")} : ${formatDisplayMoney(operationsTotal, decimals)}`
+      : `${tr("js.current-balance")} : ${tr("period.unknown")} - ${totalIncomeLabel} : ${formatDisplayMoney(operationsIncome, decimals)} - ${totalExpenseLabel} : ${formatDisplayMoney(operationsExpense, decimals)} - ${tr("js.total-operations")} : ${formatDisplayMoney(operationsTotal, decimals)}`;
   }
 }
-

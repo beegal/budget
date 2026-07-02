@@ -185,6 +185,7 @@ def budget_schedule_row_view(index: int, row: sqlite3.Row, accounts: list[sqlite
         "id": row["id"],
         "status": status,
         "status_label": status_label,
+        "date": format_date(row["date"]) if row["date"] else "",
         "label": row["label"],
         "amount": money(row["amount"]),
         "actions": budget_schedule_actions_view(status),
@@ -226,6 +227,8 @@ def account_tab_view(
         return {"type": "missing-account"}
     opening_balance = account["opening"]
     running_balance = float(opening_balance or 0)
+    operations_income = 0.0
+    operations_expense = 0.0
     operations_total = 0.0
     rows = []
     for row in transactions:
@@ -236,12 +239,24 @@ def account_tab_view(
         )
         rows.append(transaction_row_view(row, period, balance_title))
         amount = float(row["amount"] or 0)
+        if amount > 0:
+            operations_income += amount
+        elif amount < 0:
+            operations_expense += amount
         operations_total += amount
         running_balance += amount
+    total_income_label = f"{translate('common.total')} {translate('common.income').casefold()}"
+    total_expense_label = f"{translate('common.total')} {translate('common.expense').casefold()}"
     current_balance = (
-        f"{translate('period.current-balance')} : {money(running_balance)} - {translate('period.total-operations')} : {money(operations_total)}"
+        f"{translate('period.current-balance')} : {money(running_balance)} - "
+        f"{total_income_label} : {money(operations_income)} - "
+        f"{total_expense_label} : {money(operations_expense)} - "
+        f"{translate('period.total-operations')} : {money(operations_total)}"
         if opening_balance is not None
-        else f"{translate('period.current-balance')} : {translate('period.unknown')} - {translate('period.total-operations')} : {money(operations_total)}"
+        else f"{translate('period.current-balance')} : {translate('period.unknown')} - "
+        f"{total_income_label} : {money(operations_income)} - "
+        f"{total_expense_label} : {money(operations_expense)} - "
+        f"{translate('period.total-operations')} : {money(operations_total)}"
     )
     opening_data = "" if opening_balance is None else format_number(opening_balance)
     return {

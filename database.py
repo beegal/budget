@@ -37,7 +37,7 @@ DB_PATH = Path(os.environ.get("BUDGET_SQLITE_PATH", str(ROOT / "data" / "budget.
 INITIAL_DATA_PATH = ROOT / "initial-data.yaml"
 INITIAL_DATA_SEED_KEY = "initial-data"
 MIGRATIONS_DIR = ROOT / "migrations"
-LATEST_SCHEMA_VERSION = 2
+LATEST_SCHEMA_VERSION = 3
 MIGRATION_FILENAME_RE = re.compile(r"^migration_(\d+)_(\d+)\.sql$")
 LEGACY_USER_ID = "00000000-0000-0000-0000-000000000001"
 USER_SCOPED_TABLES = (
@@ -170,6 +170,7 @@ budget_schedule_table = Table(
     Column("id", Integer, primary_key=True),
     Column("user_id", String(36), nullable=False),
     Column("period_id", Integer, ForeignKey("period.id", ondelete="CASCADE"), nullable=False),
+    Column("date", String(10)),
     Column("label", String(255), nullable=False),
     Column("amount", Float, nullable=False, server_default="0"),
     Column("status", String(20), nullable=False, server_default="scheduled"),
@@ -573,6 +574,7 @@ def mysql_schema_statements() -> list[str]:
             id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
             user_id VARCHAR(36) NOT NULL,
             period_id INT NOT NULL,
+            date VARCHAR(10),
             label VARCHAR(255) NOT NULL,
             amount DOUBLE NOT NULL DEFAULT 0,
             status VARCHAR(20) NOT NULL DEFAULT 'scheduled',
@@ -706,6 +708,7 @@ def sqlite_schema() -> str:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
             period_id INTEGER NOT NULL REFERENCES period(id) ON DELETE CASCADE,
+            date TEXT,
             label TEXT NOT NULL,
             amount REAL NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled', 'found', 'cancel'))
@@ -935,8 +938,8 @@ def copy_legacy_sqlite_data(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
-        INSERT INTO budget_schedule(id, user_id, period_id, label, amount, status)
-        SELECT id, ?, period_id, label, amount, status FROM budget_schedule_legacy
+        INSERT INTO budget_schedule(id, user_id, period_id, date, label, amount, status)
+        SELECT id, ?, period_id, NULL, label, amount, status FROM budget_schedule_legacy
         """,
         (legacy,),
     )

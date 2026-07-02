@@ -1013,6 +1013,7 @@ function createBudgetScheduleRow(table) {
   row.dataset.budgetScheduleNewRow = "true";
   row.innerHTML = `
     <td class="row-index-cell"><span class="row-index-value">${index}</span></td>
+    <td></td>
     <td>${labelPickerHtml("", 'data-budget-schedule-field="label"')}</td>
     <td><input class="num" data-budget-schedule-field="amount" inputmode="decimal" placeholder="0"></td>
     <td><span class="budget-status-pill">${tr("period.status-scheduled")}</span></td>

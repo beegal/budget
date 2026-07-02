@@ -14,7 +14,7 @@
       <tr>
         <td>{{ row.date }}</td>
         <td>{{ row.period_name }}</td>
-        <td>{{ row.account_name }}</td>
+        <td>{% if row.account_href %}<a href="{{ row.account_href }}">{{ row.account_name }}</a>{% else %}{{ row.account_name }}{% endif %}</td>
         <td>{{ row.label }}</td>
         <td>{{ row.comment }}</td>
         <td class="num {{ row.amount_class }}">{{ row.amount }}</td>

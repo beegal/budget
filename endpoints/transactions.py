@@ -103,7 +103,7 @@ def planned_budget_rows(conn, period_ids: list[int], user_id: str, amount_filter
                bs.user_id,
                bs.period_id,
                0 AS account_id,
-               COALESCE(p.start_date, '') AS date,
+               COALESCE(bs.date, p.start_date, '') AS date,
                CASE
                    WHEN ? = 'all' THEN ?
                    WHEN bs.amount > 0 THEN ?
@@ -120,7 +120,7 @@ def planned_budget_rows(conn, period_ids: list[int], user_id: str, amount_filter
           AND bs.period_id IN ({placeholders})
           AND bs.status = 'scheduled'
           {amount_condition}
-        ORDER BY COALESCE(p.start_date, ''), bs.id
+        ORDER BY COALESCE(bs.date, p.start_date, ''), bs.id
         """,
         [
             amount_filter,

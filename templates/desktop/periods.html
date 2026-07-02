@@ -52,10 +52,10 @@
       <div><dt>Entrées</dt><dd class="positive">{{ period.income }}</dd></div>
       <div><dt>Sorties</dt><dd class="negative">{{ period.expense }}</dd></div>
       {% if period.has_planned %}
-      <div><dt>Entrées planifiées</dt><dd class="positive">{{ period.planned_income }}</dd></div>
-      <div><dt>Sorties planifiées</dt><dd class="negative">{{ period.planned_expense }}</dd></div>
+      <div class="metric-planned metric-planned-start"><dt>Prévu</dt><dd class="positive">{{ period.planned_income }}</dd></div>
+      <div class="metric-planned"><dt class="metric-empty-label" aria-hidden="true"></dt><dd class="negative">{{ period.planned_expense }}</dd></div>
       {% endif %}
-      <div><dt>Net</dt><dd>{{ period.net }}</dd></div>
+      <div class="metric-total"><dt>Net</dt><dd>{{ period.net }}</dd></div>
     </dl>
     <a class="button ghost" href="/period/{{ period.id }}">Ouvrir</a>
   </article>

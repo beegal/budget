@@ -128,11 +128,12 @@
     <span class="save-state" data-save-state></span>
   </div>
   <table class="sheet-table budget-schedule-table" data-budget-schedule-table data-period-id="{{ content.period_id }}">
-    <thead><tr><th class="row-index-head">#</th><th>Bezeichnung</th><th class="num">Betrag</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th class="row-index-head">#</th><th>Datum</th><th>Bezeichnung</th><th class="num">Betrag</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for row in content.rows %}
       <tr class="budget-schedule-row budget-status-{{ row.status }}" data-budget-schedule-id="{{ row.id }}">
         <td class="row-index-cell"><span class="row-index-value">{{ row.index }}</span></td>
+        <td>{{ row.date }}</td>
         <td>{{ row.label }}</td>
         <td class="num">{{ row.amount }}</td>
         <td><span class="budget-status-pill" data-budget-status>{{ row.status_label }}</span></td>
@@ -145,12 +146,12 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5">Kein geplanter Eintrag.</td></tr>
+      <tr><td colspan="6">Kein geplanter Eintrag.</td></tr>
       {% endfor %}
     </tbody>
     <tfoot>
       <tr class="table-actions-row">
-        <td colspan="4"></td>
+        <td colspan="5"></td>
         <td class="row-actions table-footer-actions">
           <button type="button" class="row-confirm icon-button" data-add-budget-schedule title="Budgeteintrag hinzufügen" aria-label="Budgeteintrag hinzufügen">{{ content.plus_icon | safe }}</button>
           <button type="button" class="row-delete icon-button" data-budget-schedule-clear title="Alle Budgeteinträge löschen" aria-label="Alle Budgeteinträge löschen">{{ content.clear_icon | safe }}</button>

@@ -4,7 +4,7 @@ import os
 import sqlite3
 import unittest
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
 from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -13,11 +13,13 @@ import budget_cli
 import database
 import security
 from app import user_export_filename
-from endpoints.api import delete_label, delete_unused_labels, ensure_transaction_label, save_label_row, save_transaction_row, sync_internal_transfer
+from endpoints.api import delete_label, delete_unused_labels, ensure_transaction_label, instantiate_budget_schedule, save_label_row, save_transaction_row, sync_internal_transfer
 from endpoints.filters import parse_period_ids
 from endpoints.imports import export_csv
 from endpoints.period import period_summary_rows
-from endpoints.periods import period_overview_totals
+from components.period import account_tab_view
+from components.transactions import transaction_view_row
+from endpoints.periods import period_overview_totals, scheduled_budget_date, seed_budget_schedule
 from endpoints.parameters import recurring_payment_candidates
 from endpoints.summary import chart_summary_rows, parse_label_groups, summary_chart_view, summary_rows
 from endpoints.transactions import planned_budget_rows, should_show_planned_budget_rows
@@ -180,6 +182,42 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(totals["expense"], -100)
         self.assertEqual(totals["net"], 125)
 
+    def test_account_tab_balance_splits_income_and_expense_totals(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "summary-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "s@example.test", "x"))
+        conn.execute("INSERT INTO period(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Jan"))
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        conn.execute("INSERT INTO account_balances(user_id, period_id, account_id, opening) VALUES (?, ?, ?, ?)", (user_id, 1, 1, 50))
+        conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, 1, 1, "2026-01-02", "Salary - Main", 200),
+        )
+        conn.execute(
+            "INSERT INTO transactions(user_id, period_id, account_id, date, label, amount) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, 1, 1, "2026-01-03", "Food - Shop", -75),
+        )
+        period = conn.execute("SELECT * FROM period WHERE id = ?", (1,)).fetchone()
+        account = conn.execute(
+            """
+            SELECT a.*, ab.opening
+            FROM accounts a
+            LEFT JOIN account_balances ab ON ab.account_id = a.id AND ab.period_id = ? AND ab.user_id = ?
+            WHERE a.id = ? AND a.user_id = ?
+            """,
+            (1, user_id, 1, user_id),
+        ).fetchone()
+        transactions = conn.execute("SELECT t.*, a.name AS account_name FROM transactions t JOIN accounts a ON a.id = t.account_id ORDER BY t.id").fetchall()
+
+        view = account_tab_view(1, period, account, transactions, [])
+
+        self.assertEqual(
+            view["current_balance"],
+            "Solde actuel : 175,00 EUR - Total entrées : 200,00 EUR - Total sorties : -75,00 EUR - Total opérations : 125,00 EUR",
+        )
+
     def test_global_summary_and_chart_include_only_scheduled_budget(self) -> None:
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -335,6 +373,39 @@ class SummaryTests(unittest.TestCase):
 
 
 class TransactionBudgetScheduleTests(unittest.TestCase):
+    def test_scheduled_budget_date_rolls_past_days_to_next_month(self) -> None:
+        self.assertEqual(scheduled_budget_date(18, date(2026, 6, 20)), "2026-07-18")
+        self.assertEqual(scheduled_budget_date(20, date(2026, 6, 20)), "2026-06-20")
+        self.assertEqual(scheduled_budget_date(25, date(2026, 6, 20)), "2026-06-25")
+        self.assertEqual(scheduled_budget_date(31, date(2026, 2, 20)), "2026-02-28")
+
+    def test_seed_budget_schedule_keeps_calculated_dates_from_monthly_days(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "seed-budget-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "seed@example.test", "x"))
+        conn.execute(
+            "INSERT INTO period(id, user_id, name, start_date, end_date) VALUES (?, ?, ?, ?, ?)",
+            (1, user_id, "Jun", "2026-06-20", None),
+        )
+        conn.execute(
+            "INSERT INTO monthly_budget(user_id, day, label, amount) VALUES (?, ?, ?, ?)",
+            (user_id, 18, "Paid already this month", -100),
+        )
+        conn.execute(
+            "INSERT INTO monthly_budget(user_id, day, label, amount) VALUES (?, ?, ?, ?)",
+            (user_id, 25, "Still coming", -50),
+        )
+
+        seed_budget_schedule(conn, 1, user_id, date(2026, 6, 20))
+
+        rows = conn.execute("SELECT date, label FROM budget_schedule ORDER BY id").fetchall()
+        self.assertEqual([(row["date"], row["label"]) for row in rows], [
+            ("2026-07-18", "Paid already this month"),
+            ("2026-06-25", "Still coming"),
+        ])
+
     def test_saving_matching_transaction_reports_newly_found_budget(self) -> None:
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -382,6 +453,72 @@ class TransactionBudgetScheduleTests(unittest.TestCase):
         self.assertNotIn("budget_message", repeated)
         status = conn.execute("SELECT status FROM budget_schedule").fetchone()["status"]
         self.assertEqual(status, "found")
+
+    def test_instantiate_budget_schedule_uses_schedule_date(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        database.ensure_schema(conn)
+        user_id = "instantiate-budget-user"
+        conn.execute("INSERT INTO users(id, email, hashed_password) VALUES (?, ?, ?)", (user_id, "i@example.test", "x"))
+        conn.execute(
+            "INSERT INTO period(id, user_id, name, start_date, end_date) VALUES (?, ?, ?, ?, ?)",
+            (1, user_id, "Jun", "2026-06-20", None),
+        )
+        conn.execute("INSERT INTO accounts(id, user_id, name) VALUES (?, ?, ?)", (1, user_id, "Cash"))
+        conn.execute(
+            "INSERT INTO budget_schedule(user_id, period_id, date, label, amount, status) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, 1, "2026-07-18", "Rent - Home", -100, "scheduled"),
+        )
+        schedule_id = conn.execute("SELECT id FROM budget_schedule").fetchone()["id"]
+
+        with patched_api_db(conn):
+            result = instantiate_budget_schedule({"id": schedule_id, "account_id": 1}, user_id)
+
+        transaction = conn.execute("SELECT date FROM transactions").fetchone()
+        self.assertEqual(transaction["date"], "2026-07-18")
+        self.assertEqual(result["date_sort"], "2026-07-18")
+
+
+class TransactionListTests(unittest.TestCase):
+    def test_transaction_view_row_links_to_account_in_period(self) -> None:
+        row = database.DictRow(
+            {
+                "id": 1,
+                "period_id": 18,
+                "account_id": 31,
+                "date": "2026-06-20",
+                "period_name": "Juin",
+                "account_name": "Cash",
+                "label": "Food",
+                "comment": "",
+                "amount": -12.5,
+            },
+            ["id", "period_id", "account_id", "date", "period_name", "account_name", "label", "comment", "amount"],
+        )
+
+        view = transaction_view_row(row)
+
+        self.assertEqual(view["account_href"], "/period/18?account=31")
+
+    def test_planned_transaction_view_row_has_no_account_link(self) -> None:
+        row = database.DictRow(
+            {
+                "id": 1,
+                "period_id": 18,
+                "account_id": 0,
+                "date": "2026-06-20",
+                "period_name": "Juin",
+                "account_name": "Budget",
+                "label": "Budget planifié",
+                "comment": "Rent",
+                "amount": -100,
+            },
+            ["id", "period_id", "account_id", "date", "period_name", "account_name", "label", "comment", "amount"],
+        )
+
+        view = transaction_view_row(row)
+
+        self.assertEqual(view["account_href"], "")
 
 
 class ParametersTests(unittest.TestCase):

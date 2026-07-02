@@ -274,6 +274,11 @@ h2 {
   justify-content: space-between;
 }
 
+.period-card:not(.period-create-card) {
+  display: flex;
+  flex-direction: column;
+}
+
 .period-warning-icon {
   align-items: center;
   background: #fff1f0;
@@ -551,14 +556,51 @@ h2 {
 
 .metrics {
   display: grid;
-  gap: 10px;
+  gap: 9px;
   margin: 18px 0;
 }
 
 .metrics div {
   align-items: center;
-  display: flex;
-  justify-content: space-between;
+  column-gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+.metrics dt {
+  line-height: 1.18;
+  min-width: 0;
+}
+
+.metrics dd {
+  font-size: inherit;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.08;
+  margin: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.period-card .button {
+  margin-top: auto;
+}
+
+.period-card .metric-planned-start {
+  border-top: 1px solid #eef2f6;
+  margin-top: 2px;
+  padding-top: 8px;
+}
+
+.period-card .metric-empty-label {
+  min-height: 1em;
+}
+
+.period-card .metrics div:last-child,
+.period-card .metric-total {
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+  padding-top: 9px;
 }
 
 .balance-check {

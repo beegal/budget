@@ -679,8 +679,8 @@ def save_budget_schedule_row(payload: dict[str, object], user_id: str) -> dict[s
             raise ValueError(translate("errors.period-not-found"))
         ensure_transaction_label(conn, user_id, label)
         conn.execute(
-            "INSERT INTO budget_schedule(user_id, period_id, label, amount, status) VALUES (?, ?, ?, ?, 'scheduled')",
-            (user_id, period_id, label, amount),
+            "INSERT INTO budget_schedule(user_id, period_id, date, label, amount, status) VALUES (?, ?, ?, ?, ?, 'scheduled')",
+            (user_id, period_id, date.today().isoformat(), label, amount),
         )
         schedule_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     return {"id": schedule_id, "label": label, "amount": format_number(amount)}
@@ -696,7 +696,6 @@ def clear_budget_schedule(payload: dict[str, object], user_id: str) -> dict[str,
 def instantiate_budget_schedule(payload: dict[str, object], user_id: str) -> dict[str, object]:
     schedule_id = int(payload["id"])
     account_id = int(payload["account_id"])
-    tx_date = date.today().isoformat()
     with db() as conn:
         scheduled = conn.execute("SELECT * FROM budget_schedule WHERE id = ? AND user_id = ?", (schedule_id, user_id)).fetchone()
         if scheduled is None:
@@ -709,6 +708,7 @@ def instantiate_budget_schedule(payload: dict[str, object], user_id: str) -> dic
         label = str(scheduled["label"])
         amount = float(scheduled["amount"] or 0)
         period_id = int(scheduled["period_id"])
+        tx_date = str(scheduled["date"] or date.today().isoformat())
         ensure_transaction_label(conn, user_id, label)
         sort_index = next_transaction_index(conn, period_id, account_id, user_id)
         shift_transaction_indexes(conn, period_id, account_id, sort_index, user_id)

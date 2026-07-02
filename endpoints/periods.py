@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 from datetime import date, datetime, timedelta
 import sqlite3
 
@@ -161,17 +162,37 @@ def create(data: dict[str, list[str]], user_id: str) -> str:
     return "/"
 
 
-def seed_budget_schedule(conn, period_id: int, user_id: str) -> None:
-    conn.execute(
+def seed_budget_schedule(conn, period_id: int, user_id: str, reference_date: date | None = None) -> None:
+    rows = conn.execute(
         """
-        INSERT INTO budget_schedule(user_id, period_id, label, amount, status)
-        SELECT ?, ?, label, amount, 'scheduled'
+        SELECT day, label, amount
         FROM monthly_budget
         WHERE user_id = ?
         ORDER BY day, id
         """,
-        (user_id, period_id, user_id),
-    )
+        (user_id,),
+    ).fetchall()
+    for row in rows:
+        conn.execute(
+            """
+            INSERT INTO budget_schedule(user_id, period_id, date, label, amount, status)
+            VALUES (?, ?, ?, ?, ?, 'scheduled')
+            """,
+            (user_id, period_id, scheduled_budget_date(int(row["day"]), reference_date), row["label"], row["amount"]),
+        )
+
+
+def scheduled_budget_date(day: int, reference_date: date | None = None) -> str:
+    reference = reference_date or date.today()
+    target_year = reference.year
+    target_month = reference.month
+    if day < reference.day:
+        target_month += 1
+        if target_month > 12:
+            target_month = 1
+            target_year += 1
+    target_day = min(max(day, 1), calendar.monthrange(target_year, target_month)[1])
+    return date(target_year, target_month, target_day).isoformat()
 
 
 def normalize_period_end(value: str) -> str | None:
